@@ -263,6 +263,147 @@ class MlpExtractor(nn.Module):
         return self.value_net(features)
 
 
+class MlpExtractorDopa(nn.Module):
+    """
+    Constructs an MLP that receives the output from a previous features extractor (i.e. a CNN) or directly
+    the observations (if no features extractor is applied) as an input and outputs a latent representation
+    for the policy and a value network.
+
+    The ``net_arch`` parameter allows to specify the amount and size of the hidden layers.
+    It can be in either of the following forms:
+    1. ``dict(vf=[<list of layer sizes>], pi=[<list of layer sizes>])``: to specify the amount and size of the layers in the
+        policy and value nets individually. If it is missing any of the keys (pi or vf),
+        zero layers will be considered for that key.
+    2. ``[<list of layer sizes>]``: "shortcut" in case the amount and size of the layers
+        in the policy and value nets are the same. Same as ``dict(vf=int_list, pi=int_list)``
+        where int_list is the same for the actor and critic.
+
+    .. note::
+        If a key is not specified or an empty list is passed ``[]``, a linear network will be used.
+
+    :param feature_dim: Dimension of the feature vector (can be the output of a CNN)
+    :param net_arch: The specification of the policy and value networks.
+        See above for details on its formatting.
+    :param activation_fn: The activation function to use for the networks.
+    :param device: PyTorch device.
+    """
+
+    def __init__(
+        self,
+        feature_dim: int,
+        net_arch: Union[list[int], dict[str, list[int]]],
+        activation_fn: type[nn.Module],
+        device: Union[th.device, str] = "auto",
+    ) -> None:
+        super().__init__()
+        device = get_device(device)
+        policy_net: list[nn.Module] = []
+        value_net: list[nn.Module] = []
+        reward_net: list[nn.Module] = []
+        v2d_net: list[nn.Module] = []
+        nextv2d_net: list[nn.Module] = []
+        r2d_net: list[nn.Module] = []
+        dopa_net: list[nn.Module] = []
+
+        # save dimensions of layers in policy, value, dopa nets
+        if isinstance(net_arch, dict):
+            # Note: if key is not specified, assume linear network
+            pi_layers_dims = net_arch.get("pi", [])  # Layer sizes of the policy network
+            vf_layers_dims = net_arch.get("vf", [])  # Layer sizes of the value network            
+            re_layers_dims = net_arch.get("re", [])  # Layer sizes of the reward network
+            v2d_layers_dims = net_arch.get("v2d", [])  # Layer sizes of the reward network
+            nextv2d_layers_dims = net_arch.get("v2d", [])  # Layer sizes of the reward network
+            r2d_layers_dims = net_arch.get("r2d", [])  # Layer sizes of the reward network
+            da_layers_dims = net_arch.get("da", [])  # Layer sizes of the dopa network
+        else:
+            pi_layers_dims = vf_layers_dims = re_layers_dims = da_layers_dims = net_arch
+        # save dimensions of the inputs to networks
+        last_layer_dim_pi = feature_dim
+        last_layer_dim_vf = feature_dim        
+        last_layer_dim_re = 1
+        last_layer_dim_v2d = last_layer_dim_nextv2d = last_layer_dim_r2d = 1
+        last_layer_dim_da = v2d_layers_dims[-1]
+            
+        # Iterate through the policy layers and build the policy net
+        for curr_layer_dim in pi_layers_dims:
+            policy_net.append(nn.Linear(last_layer_dim_pi, curr_layer_dim))
+            policy_net.append(activation_fn())
+            last_layer_dim_pi = curr_layer_dim
+        # Iterate through the value layers and build the value net
+        for curr_layer_dim in vf_layers_dims:
+            value_net.append(nn.Linear(last_layer_dim_vf, curr_layer_dim))
+            value_net.append(activation_fn())
+            last_layer_dim_vf = curr_layer_dim
+        # Iterate through the reward layers and build the reward net
+        for curr_layer_dim in re_layers_dims:
+            reward_net.append(nn.Linear(last_layer_dim_re, curr_layer_dim))
+            reward_net.append(activation_fn())
+            last_layer_dim_re = curr_layer_dim     
+        # Iterate through the value-dopa layers and build the value-dopa net
+        for curr_layer_dim in v2d_layers_dims:
+            v2d_net.append(nn.Linear(last_layer_dim_v2d, curr_layer_dim))
+            last_layer_dim_v2d = curr_layer_dim     
+        # Iterate through the value-dopa layers and build the value-dopa net
+        for curr_layer_dim in nextv2d_layers_dims:
+            nextv2d_net.append(nn.Linear(last_layer_dim_nextv2d, curr_layer_dim))
+            last_layer_dim_nextv2d = curr_layer_dim     
+        # Iterate through the reward-dopa layers and build the reward-dopa net
+        for curr_layer_dim in r2d_layers_dims:
+            r2d_net.append(nn.Linear(last_layer_dim_r2d, curr_layer_dim))
+            last_layer_dim_r2d = curr_layer_dim     
+        # Iterate through the dopa layers and build the dopa net
+        for curr_layer_dim in da_layers_dims:
+            dopa_net.append(nn.Linear(last_layer_dim_da, curr_layer_dim))
+            dopa_net.append(activation_fn())
+            last_layer_dim_da = curr_layer_dim
+
+        # Save dim, used to create the distributions
+        self.latent_dim_pi = last_layer_dim_pi
+        self.latent_dim_vf = last_layer_dim_vf
+        self.latent_dim_re = last_layer_dim_re
+        self.latent_dim_v2d = last_layer_dim_v2d
+        self.latent_dim_nextv2d = last_layer_dim_nextv2d
+        self.latent_dim_r2d = last_layer_dim_r2d
+        self.latent_dim_da = last_layer_dim_da
+
+        # Create networks
+        # If the list of layers is empty, the network will just act as an Identity module
+        self.policy_net = nn.Sequential(*policy_net).to(device)
+        self.value_net = nn.Sequential(*value_net).to(device)
+        self.reward_net = nn.Sequential(*reward_net).to(device)
+        self.v2d_net = nn.Sequential(*v2d_net).to(device)
+        self.nextv2d_net = nn.Sequential(*nextv2d_net).to(device)
+        self.r2d_net = nn.Sequential(*r2d_net).to(device)
+        self.dopa_net = nn.Sequential(*dopa_net).to(device)
+
+    def forward(self, features: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
+        """
+        :return: latent_policy, latent_value of the specified network.
+            If all layers are shared, then ``latent_policy == latent_value``
+        """
+        return self.forward_actor(features), self.forward_critic(features)
+
+    def forward_actor(self, features: th.Tensor) -> th.Tensor:
+        return self.policy_net(features)
+
+    def forward_critic(self, features: th.Tensor) -> th.Tensor:
+        return self.value_net(features)
+
+    def forward_reward(self, features: th.Tensor) -> th.Tensor:
+        return self.reward_net(features)
+
+    def forward_v2d(self, features: th.Tensor) -> th.Tensor:
+        return self.v2d_net(features)
+
+    def forward_nextv2d(self, features: th.Tensor) -> th.Tensor:
+        return self.nextv2d_net(features)
+
+    def forward_r2d(self, features: th.Tensor) -> th.Tensor:
+        return self.r2d_net(features)
+
+    def forward_dopa(self, features: th.Tensor) -> th.Tensor:
+        return self.dopa_net(features)
+
 class CombinedExtractor(BaseFeaturesExtractor):
     """
     Combined features extractor for Dict observation spaces.

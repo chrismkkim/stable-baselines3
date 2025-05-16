@@ -32,9 +32,26 @@ class RolloutBufferSamples(NamedTuple):
     observations: th.Tensor
     actions: th.Tensor
     old_values: th.Tensor
+    next_values: th.Tensor
+    next_dones: th.Tensor
+    old_log_prob: th.Tensor
+    dopa: th.Tensor
+    advantages: th.Tensor
+    returns: th.Tensor
+    returns_dopa: th.Tensor
+    rewards: th.Tensor
+
+
+class MetaRolloutBufferSamples(NamedTuple):
+    observations: th.Tensor
+    actions: th.Tensor
+    old_values: th.Tensor
+    next_values: th.Tensor
+    next_dones: th.Tensor
     old_log_prob: th.Tensor
     advantages: th.Tensor
     returns: th.Tensor
+    rewards: th.Tensor
 
 
 class DictRolloutBufferSamples(NamedTuple):
