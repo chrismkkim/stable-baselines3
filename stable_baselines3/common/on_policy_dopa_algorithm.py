@@ -64,6 +64,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         policy: Union[str, type[ActorCriticDopaPolicy]],
         env: Union[GymEnv, str],
         learning_rate: Union[float, Schedule],
+        learning_rate_dopa: Union[float, Schedule],
         n_steps: int,
         n_meta_steps: int,
         gamma: float,
@@ -113,6 +114,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         self.rollout_buffer_class = rollout_buffer_class
         self.meta_rollout_buffer_class = meta_rollout_buffer_class
         self.rollout_buffer_kwargs = rollout_buffer_kwargs or {}
+        self.learning_rate_dopa = learning_rate_dopa
 
         if _init_setup_model:
             self._setup_model()
@@ -386,14 +388,11 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         """
         self.policy.net_arch = dict(pi=[64, 64], vf=[64, 64], re=[64,64], 
                                     v2d=[64], r2d=[64], da=[64,64])        
-
         """
-        # adjust the learning rates of each network
+        # networks related to dopamine
         """
         self.policy.da_net_names = ["reward", "v2d", "nextv2d", "r2d", "dopa"]
-        self.policy.lr_factor = 0.5
         
-        # prev_time = time.time()
         while self.num_timesteps < total_timesteps:
             continue_training = self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
     
@@ -411,15 +410,10 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
             """
             meta-rollouts to collect data over long time for training dopamine network
             """
-            _ = self.collect_meta_rollouts(self.env, callback, self.meta_rollout_buffer, n_meta_rollout_steps=self.n_steps, rollout_last_obs=self.rollout_buffer.observations)
+            _ = self.collect_meta_rollouts(self.env, callback, self.meta_rollout_buffer, n_meta_rollout_steps=self.n_meta_steps, rollout_last_obs=self.rollout_buffer.observations)
             
             self.train(self.num_timesteps, total_timesteps)
             
-            # if self.num_timesteps % (self.env.num_envs * 10000) == 0:
-            #     elapsed_time = time.time() - prev_time
-            #     print("elapsed time ", elapsed_time)
-            #     prev_time = time.time()
-
         callback.on_training_end()
 
         return self
@@ -455,7 +449,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         """
         use last_obs from RL-rollout as the initial state
         """
-        assert rollout_last_obs.shape[0] == 1, "Rolled out more than 1 step"
+        assert rollout_last_obs.shape[0] == 1, "Error: Rolled out more than 1 step"
         self._meta_last_obs = np.squeeze(rollout_last_obs)
         # Switch to eval mode (this affects batch norm / dropout)
         self.policy.set_training_mode(False)

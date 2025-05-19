@@ -802,7 +802,7 @@ class ActorCriticDopaPolicy(BasePolicy):
         observation_space: spaces.Space,
         action_space: spaces.Space,
         lr_schedule: Schedule,
-        lr_factor: float = 1.0,
+        learning_rate_dopa: float = 1e-2,
         da_net_names: list[str] = ["reward", "v2d", "nextv2d", "r2d", "dopa"],
         net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None,
         activation_fn: type[nn.Module] = nn.Tanh,
@@ -886,7 +886,7 @@ class ActorCriticDopaPolicy(BasePolicy):
         # Action distribution
         self.action_dist = make_proba_distribution(action_space, use_sde=use_sde, dist_kwargs=dist_kwargs)
 
-        self.lr_factor = lr_factor
+        self.learning_rate_dopa = learning_rate_dopa
         self.da_net_names = da_net_names
         self._build(lr_schedule)
 
@@ -992,12 +992,13 @@ class ActorCriticDopaPolicy(BasePolicy):
         # self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)  # type: ignore[call-arg]
         
         # da_net_names = ["reward", "v2d", "nextv2d", "r2d", "dopa"]
-        base_lr = lr_schedule(1)
+        learning_rate      = lr_schedule(1)
+        learning_rate_dopa = self.learning_rate_dopa
         self.optimizer = self.optimizer_class([
-            {"params": [p for n, p in self.named_parameters() if self._contains_da_name(n, self.da_net_names)],
-             "lr": base_lr},
             {"params": [p for n, p in self.named_parameters() if not self._contains_da_name(n, self.da_net_names)], 
-             "lr": base_lr * self.lr_factor}            
+             "lr": learning_rate},
+            {"params": [p for n, p in self.named_parameters() if self._contains_da_name(n, self.da_net_names)],
+             "lr": learning_rate_dopa}                        
         ], **self.optimizer_kwargs)        
         
         # """
@@ -1014,18 +1015,7 @@ class ActorCriticDopaPolicy(BasePolicy):
         #     print(f"Group {idx + 1}: lr = {group['lr']}, #params = {len(group['params'])}")
                     
     def _contains_da_name(self, param_name, da_names):
-        return any(substring in param_name for substring in da_names)
-    
-    # def _initialize_ntwk_LRs(self, base_lr, lr_factor):
-    #     base_lr = 1e-5
-    #     lr_factor = 0.1
-    #     da_net_names = ["reward", "v2d", "nextv2d", "r2d", "dopa"]
-    #     self.optimizer1 = self.optimizer_class([
-    #         {"params": [p for n, p in self.named_parameters() if self._contains_da_name(n, da_net_names)],
-    #          "lr": base_lr},
-    #         {"params": [p for n, p in self.named_parameters() if not self._contains_da_name(n, da_net_names)], 
-    #          "lr": base_lr * lr_factor}            
-    #     ], **self.optimizer_kwargs)        
+        return any(substring in param_name for substring in da_names)    
                 
 
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
