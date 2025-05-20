@@ -401,7 +401,8 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
 
             iteration += 1
             self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
-
+            print(f'\rprogress: {np.round(self._current_progress_remaining, decimals=2)}', end='')
+            
             # Display training infos
             if log_interval is not None and iteration % log_interval == 0:
                 assert self.ep_info_buffer is not None
@@ -449,7 +450,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         """
         use last_obs from RL-rollout as the initial state
         """
-        assert rollout_last_obs.shape[0] == 1, "Error: Rolled out more than 1 step"
+        # assert rollout_last_obs.shape[0] == 1, "Error: Rolled out more than 1 step"
         self._meta_last_obs = np.squeeze(rollout_last_obs)
         # Switch to eval mode (this affects batch norm / dropout)
         self.policy.set_training_mode(False)
