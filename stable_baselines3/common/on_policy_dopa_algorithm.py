@@ -6,6 +6,9 @@ from typing import Any, Optional, TypeVar, Union
 import numpy as np
 import torch as th
 from gymnasium import spaces
+import torch.nn as nn
+from torch.nn import functional as F
+import matplotlib.pyplot as plt
 
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.buffers import DictRolloutBuffer, RolloutBuffer, MetaRolloutBuffer
@@ -65,6 +68,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         env: Union[GymEnv, str],
         learning_rate: Union[float, Schedule],
         learning_rate_dopa: Union[float, Schedule],
+        net_arch: Optional[Union[list[int], dict[str, list[int]]]],
         n_steps: int,
         n_meta_steps: int,
         gamma: float,
@@ -115,6 +119,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         self.meta_rollout_buffer_class = meta_rollout_buffer_class
         self.rollout_buffer_kwargs = rollout_buffer_kwargs or {}
         self.learning_rate_dopa = learning_rate_dopa
+        self.net_arch = net_arch
 
         if _init_setup_model:
             self._setup_model()
@@ -153,7 +158,9 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         )
         
         self.policy = self.policy_class(  # type: ignore[assignment]
-            self.observation_space, self.action_space, self.lr_schedule, use_sde=self.use_sde, **self.policy_kwargs
+            self.observation_space, self.action_space, self.lr_schedule, 
+            learning_rate_dopa = self.learning_rate_dopa, net_arch = self.net_arch,
+            use_sde=self.use_sde, **self.policy_kwargs
         )
         self.policy = self.policy.to(self.device)
         # Warn when not using CPU with MlpPolicy
@@ -338,29 +345,6 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         """
         raise NotImplementedError
 
-    def dump_logs(self, iteration: int = 0) -> None:
-        """
-        Write log.
-
-        :param iteration: Current logging iteration
-        """
-        assert self.ep_info_buffer is not None
-        assert self.ep_success_buffer is not None
-
-        time_elapsed = max((time.time_ns() - self.start_time) / 1e9, sys.float_info.epsilon)
-        fps = int((self.num_timesteps - self._num_timesteps_at_start) / time_elapsed)
-        if iteration > 0:
-            self.logger.record("time/iterations", iteration, exclude="tensorboard")
-        if len(self.ep_info_buffer) > 0 and len(self.ep_info_buffer[0]) > 0:
-            self.logger.record("rollout/ep_rew_mean", safe_mean([ep_info["r"] for ep_info in self.ep_info_buffer]))
-            self.logger.record("rollout/ep_len_mean", safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer]))
-        self.logger.record("time/fps", fps)
-        self.logger.record("time/time_elapsed", int(time_elapsed), exclude="tensorboard")
-        self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
-        if len(self.ep_success_buffer) > 0:
-            self.logger.record("rollout/success_rate", safe_mean(self.ep_success_buffer))
-        self.logger.dump(step=self.num_timesteps)
-
     def learn(
         self: SelfOnPolicyAlgorithm,
         total_timesteps: int,
@@ -382,23 +366,22 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
 
         callback.on_training_start(locals(), globals())
 
-        assert self.env is not None
-        """
-        Define network architecture.
-        """
-        self.policy.net_arch = dict(pi=[64, 64], vf=[64, 64], re=[64,64], 
-                                    v2d=[64], r2d=[64], da=[64,64])        
+        assert self.env is not None          
         """
         # networks related to dopamine
         """
-        self.policy.da_net_names = ["reward", "v2d", "nextv2d", "r2d", "dopa"]
+        self.policy.da_net_names = ["reward", "v2d", "nextv2d", "r2d", "d2d", "dopa", "td"]
+        
         
         while self.num_timesteps < total_timesteps:
+            
             continue_training = self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
     
             if not continue_training:
-                break
+                break                
 
+            # self.num_timesteps += 1
+            
             iteration += 1
             self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
             print(f'\rprogress: {np.round(self._current_progress_remaining, decimals=2)}', end='')
@@ -411,10 +394,11 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
             """
             meta-rollouts to collect data over long time for training dopamine network
             """
-            _ = self.collect_meta_rollouts(self.env, callback, self.meta_rollout_buffer, n_meta_rollout_steps=self.n_meta_steps, rollout_last_obs=self.rollout_buffer.observations)
+            # _ = self.collect_meta_rollouts(self.env, callback, self.meta_rollout_buffer, n_meta_rollout_steps=self.n_meta_steps, rollout_last_obs=self.rollout_buffer.observations)
             
             self.train(self.num_timesteps, total_timesteps)
             
+
         callback.on_training_end()
 
         return self
@@ -544,3 +528,27 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         callback.on_rollout_end()
 
         return True
+
+
+    def dump_logs(self, iteration: int = 0) -> None:
+        """
+        Write log.
+
+        :param iteration: Current logging iteration
+        """
+        assert self.ep_info_buffer is not None
+        assert self.ep_success_buffer is not None
+
+        time_elapsed = max((time.time_ns() - self.start_time) / 1e9, sys.float_info.epsilon)
+        fps = int((self.num_timesteps - self._num_timesteps_at_start) / time_elapsed)
+        if iteration > 0:
+            self.logger.record("time/iterations", iteration, exclude="tensorboard")
+        if len(self.ep_info_buffer) > 0 and len(self.ep_info_buffer[0]) > 0:
+            self.logger.record("rollout/ep_rew_mean", safe_mean([ep_info["r"] for ep_info in self.ep_info_buffer]))
+            self.logger.record("rollout/ep_len_mean", safe_mean([ep_info["l"] for ep_info in self.ep_info_buffer]))
+        self.logger.record("time/fps", fps)
+        self.logger.record("time/time_elapsed", int(time_elapsed), exclude="tensorboard")
+        self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
+        if len(self.ep_success_buffer) > 0:
+            self.logger.record("rollout/success_rate", safe_mean(self.ep_success_buffer))
+        self.logger.dump(step=self.num_timesteps)

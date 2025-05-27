@@ -803,7 +803,7 @@ class ActorCriticDopaPolicy(BasePolicy):
         action_space: spaces.Space,
         lr_schedule: Schedule,
         learning_rate_dopa: float = 1e-2,
-        da_net_names: list[str] = ["reward", "v2d", "nextv2d", "r2d", "dopa"],
+        da_net_names: list[str] = ["reward", "v2d", "nextv2d", "r2d", "d2d", "dopa", "td"],
         net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None,
         activation_fn: type[nn.Module] = nn.Tanh,
         ortho_init: bool = True,
@@ -851,7 +851,7 @@ class ActorCriticDopaPolicy(BasePolicy):
             if features_extractor_class == NatureCNN:
                 net_arch = []
             else:
-                net_arch = dict(pi=[64, 64], vf=[64, 64], re=[64,64], v2d=[64], r2d=[64], da=[64,64])
+                net_arch = dict(pi=[64, 64], vf=[64, 64], re=[64,64], v2d=[64], r2d=[64], d2d=[64], da=[64,64])
 
         self.net_arch = net_arch
         self.activation_fn = activation_fn
@@ -988,31 +988,43 @@ class ActorCriticDopaPolicy(BasePolicy):
             for module, gain in module_gains.items():
                 module.apply(partial(self.init_weights, gain=gain))
 
-        # Setup optimizers with initial learning rate
-        # self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)  # type: ignore[call-arg]
-        
-        # da_net_names = ["reward", "v2d", "nextv2d", "r2d", "dopa"]
+        # Two optimizers
+        #   - RL network: RMSprop
+        #   - TD network: Adam
         learning_rate      = lr_schedule(1)
         learning_rate_dopa = self.learning_rate_dopa
         self.optimizer = self.optimizer_class([
             {"params": [p for n, p in self.named_parameters() if not self._contains_da_name(n, self.da_net_names)], 
-             "lr": learning_rate},
-            {"params": [p for n, p in self.named_parameters() if self._contains_da_name(n, self.da_net_names)],
-             "lr": learning_rate_dopa}                        
+             "lr": learning_rate}                                    
         ], **self.optimizer_kwargs)        
         
-        # """
+        self.optimizer_meta = th.optim.Adam(self.mlp_extractor.td_net.parameters(), lr=learning_rate_dopa)
+                
+        #---- Previous approach - Both networks used RMSprop ---#
+        # # Setup optimizers with initial learning rate        
+        # learning_rate      = lr_schedule(1)
+        # learning_rate_dopa = self.learning_rate_dopa
+        # self.optimizer = self.optimizer_class([
+        #     {"params": [p for n, p in self.named_parameters() if not self._contains_da_name(n, self.da_net_names)], 
+        #      "lr": learning_rate},
+        #     {"params": [p for n, p in self.named_parameters() if self._contains_da_name(n, self.da_net_names)],
+        #      "lr": learning_rate_dopa}                        
+        # ], **self.optimizer_kwargs)        
+        
+        
+        """
         # for checking parameters and learning rates
-        # """
-        # # print network names                
-        # for _name, param in self.named_parameters():
-        #     print(_name)
-        #     # print(param)        
-        # # save network names in a list
-        # name = [n for n, _ in self.named_parameters()]
-        # # check learning rates of parameterg groups
-        # for idx, group in enumerate(self.optimizer1.param_groups):
-        #     print(f"Group {idx + 1}: lr = {group['lr']}, #params = {len(group['params'])}")
+        
+        # print network names                
+        for _name, param in self.named_parameters():
+            print(_name)
+            # print(param)        
+        # save network names in a list
+        name = [n for n, _ in self.named_parameters()]
+        # check learning rates of parameterg groups
+        for idx, group in enumerate(self.optimizer1.param_groups):
+            print(f"Group {idx + 1}: lr = {group['lr']}, #params = {len(group['params'])}")
+        """
                     
     def _contains_da_name(self, param_name, da_names):
         return any(substring in param_name for substring in da_names)    
@@ -1036,11 +1048,41 @@ class ActorCriticDopaPolicy(BasePolicy):
         actions = actions.reshape((-1, *self.action_space.shape))  # type: ignore[misc]
         return actions, values, log_prob
 
+    def gen_td(self, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor) -> th.Tensor:
+        input_to_td = th.cat([rewards, next_values, values, dones], dim=1)
+        td = self.mlp_extractor.td_net(input_to_td)
+        return td
+
     def gen_dopa(self, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor) -> th.Tensor:
         rewards_to_da = self._run_reward(rewards)
         dopa = self._run_dopa(rewards_to_da, next_values, values, dones)
         return dopa
 
+    def _run_vp(self, features: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
+        if self.share_features_extractor:
+            latent_pi, latent_vf = self.mlp_extractor(features)
+        else:
+            pi_features, vf_features = features
+            latent_pi = self.mlp_extractor.forward_actor(pi_features)
+            latent_vf = self.mlp_extractor.forward_critic(vf_features)
+        values  = self.value_net(latent_vf)
+        return latent_pi, latent_vf, values
+
+    def _run_reward(self, rewards: th.Tensor) -> th.Tensor:
+        # (1) latent reward
+        latent_re   = self.mlp_extractor.forward_reward(rewards)  
+        # (2) inputs to dopa         
+        rewards_to_da = self.reward_net(latent_re)
+        return rewards_to_da
+
+    def _run_dopa(self, rewards_to_da: th.Tensor, next_values_to_da: th.Tensor, values_to_da: th.Tensor, dones: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
+        # (1) all inputs to dopa network
+        input_to_da   = self.mlp_extractor.forward_r2d(rewards_to_da) + self.mlp_extractor.forward_nextv2d(next_values_to_da) + self.mlp_extractor.forward_v2d(values_to_da) + self.mlp_extractor.forward_d2d(th.tensor(1) - dones.float())
+        # (2) generate dopa 
+        latent_da     = self.mlp_extractor.forward_dopa(input_to_da)
+        dopa          = self.dopa_net(latent_da)        
+        return dopa
+        
     def extract_features(  # type: ignore[override]
         self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None
     ) -> Union[th.Tensor, tuple[th.Tensor, th.Tensor]]:
@@ -1118,30 +1160,13 @@ class ActorCriticDopaPolicy(BasePolicy):
         entropy = distribution.entropy()
         return values, log_prob, entropy
 
-    def _run_vp(self, features: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
-        if self.share_features_extractor:
-            latent_pi, latent_vf = self.mlp_extractor(features)
-        else:
-            pi_features, vf_features = features
-            latent_pi = self.mlp_extractor.forward_actor(pi_features)
-            latent_vf = self.mlp_extractor.forward_critic(vf_features)
-        values  = self.value_net(latent_vf)
-        return latent_pi, latent_vf, values
-
-    def _run_reward(self, rewards: th.Tensor) -> th.Tensor:
-        # (1) latent reward
-        latent_re   = self.mlp_extractor.forward_reward(rewards)  
-        # (2) inputs to dopa         
-        rewards_to_da = self.reward_net(latent_re)
-        return rewards_to_da
-        
-    def _run_dopa(self, rewards_to_da: th.Tensor, next_values_to_da: th.Tensor, values_to_da: th.Tensor, dones: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
-        # (1) all inputs to dopa network
-        input_to_da   = self.mlp_extractor.forward_r2d(rewards_to_da) + th.logical_not(dones) * self.mlp_extractor.forward_nextv2d(next_values_to_da) + self.mlp_extractor.forward_v2d(values_to_da)
-        # (2) generate dopa 
-        latent_da     = self.mlp_extractor.forward_dopa(input_to_da)
-        dopa          = self.dopa_net(latent_da)        
-        return dopa
+    # def _run_dopa(self, rewards_to_da: th.Tensor, next_values_to_da: th.Tensor, values_to_da: th.Tensor, dones: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
+    #     # (1) all inputs to dopa network
+    #     input_to_da   = self.mlp_extractor.forward_r2d(rewards_to_da) + th.logical_not(dones) * self.mlp_extractor.forward_nextv2d(next_values_to_da) + self.mlp_extractor.forward_v2d(values_to_da)
+    #     # (2) generate dopa 
+    #     latent_da     = self.mlp_extractor.forward_dopa(input_to_da)
+    #     dopa          = self.dopa_net(latent_da)        
+    #     return dopa
         
     def get_distribution(self, obs: PyTorchObs) -> Distribution:
         """

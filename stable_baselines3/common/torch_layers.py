@@ -303,7 +303,9 @@ class MlpExtractorDopa(nn.Module):
         v2d_net: list[nn.Module] = []
         nextv2d_net: list[nn.Module] = []
         r2d_net: list[nn.Module] = []
+        d2d_net: list[nn.Module] = []
         dopa_net: list[nn.Module] = []
+        td_net: list[nn.Module] = []
 
         # save dimensions of layers in policy, value, dopa nets
         if isinstance(net_arch, dict):
@@ -314,15 +316,18 @@ class MlpExtractorDopa(nn.Module):
             v2d_layers_dims = net_arch.get("v2d", [])  # Layer sizes of the reward network
             nextv2d_layers_dims = net_arch.get("v2d", [])  # Layer sizes of the reward network
             r2d_layers_dims = net_arch.get("r2d", [])  # Layer sizes of the reward network
+            d2d_layers_dims = net_arch.get("d2d", [])  # Layer sizes of the reward network
             da_layers_dims = net_arch.get("da", [])  # Layer sizes of the dopa network
+            td_layers_dims = net_arch.get("td", [])  # Layer sizes of the td network
         else:
             pi_layers_dims = vf_layers_dims = re_layers_dims = da_layers_dims = net_arch
         # save dimensions of the inputs to networks
         last_layer_dim_pi = feature_dim
         last_layer_dim_vf = feature_dim        
         last_layer_dim_re = 1
-        last_layer_dim_v2d = last_layer_dim_nextv2d = last_layer_dim_r2d = 1
+        last_layer_dim_v2d = last_layer_dim_nextv2d = last_layer_dim_r2d = last_layer_dim_d2d = 1
         last_layer_dim_da = v2d_layers_dims[-1]
+        last_layer_dim_td = 4
             
         # Iterate through the policy layers and build the policy net
         for curr_layer_dim in pi_layers_dims:
@@ -351,11 +356,22 @@ class MlpExtractorDopa(nn.Module):
         for curr_layer_dim in r2d_layers_dims:
             r2d_net.append(nn.Linear(last_layer_dim_r2d, curr_layer_dim))
             last_layer_dim_r2d = curr_layer_dim     
+        # Iterate through the done-dopa layers and build the done-dopa net
+        for curr_layer_dim in d2d_layers_dims:
+            d2d_net.append(nn.Linear(last_layer_dim_d2d, curr_layer_dim))
+            last_layer_dim_d2d = curr_layer_dim     
         # Iterate through the dopa layers and build the dopa net
-        for curr_layer_dim in da_layers_dims:
+        for layer_num, curr_layer_dim in enumerate(da_layers_dims):
             dopa_net.append(nn.Linear(last_layer_dim_da, curr_layer_dim))
-            dopa_net.append(activation_fn())
+            if layer_num < len(da_layers_dims)-1:
+                dopa_net.append(activation_fn())
             last_layer_dim_da = curr_layer_dim
+        # Iterate through the dopa layers and build the td net
+        for layer_num, curr_layer_dim in enumerate(td_layers_dims):
+            td_net.append(nn.Linear(last_layer_dim_td, curr_layer_dim))
+            if layer_num < len(td_layers_dims) -1 :
+                td_net.append(activation_fn())
+            last_layer_dim_td = curr_layer_dim
 
         # Save dim, used to create the distributions
         self.latent_dim_pi = last_layer_dim_pi
@@ -364,6 +380,7 @@ class MlpExtractorDopa(nn.Module):
         self.latent_dim_v2d = last_layer_dim_v2d
         self.latent_dim_nextv2d = last_layer_dim_nextv2d
         self.latent_dim_r2d = last_layer_dim_r2d
+        self.latent_dim_d2d = last_layer_dim_d2d
         self.latent_dim_da = last_layer_dim_da
 
         # Create networks
@@ -374,7 +391,10 @@ class MlpExtractorDopa(nn.Module):
         self.v2d_net = nn.Sequential(*v2d_net).to(device)
         self.nextv2d_net = nn.Sequential(*nextv2d_net).to(device)
         self.r2d_net = nn.Sequential(*r2d_net).to(device)
+        self.d2d_net = nn.Sequential(*d2d_net).to(device)
         self.dopa_net = nn.Sequential(*dopa_net).to(device)
+        self.td_net = nn.Sequential(*td_net).to(device)
+
 
     def forward(self, features: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
         """
@@ -401,8 +421,14 @@ class MlpExtractorDopa(nn.Module):
     def forward_r2d(self, features: th.Tensor) -> th.Tensor:
         return self.r2d_net(features)
 
+    def forward_d2d(self, features: th.Tensor) -> th.Tensor:
+        return self.d2d_net(features)
+
     def forward_dopa(self, features: th.Tensor) -> th.Tensor:
         return self.dopa_net(features)
+
+    def forward_td(self, features: th.Tensor) -> th.Tensor:
+        return self.td_net(features)
 
 class CombinedExtractor(BaseFeaturesExtractor):
     """
