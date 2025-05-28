@@ -33,13 +33,13 @@ def make_env(env_id: str, rank: int, seed: int = 0) -> Callable:
     set_random_seed(seed)
     return _init
 
-env_id = "CartPole-v1"
-num_cpu = 10  # Number of processes to use
 # # Create the vectorized environment
 # env = SubprocVecEnv([make_env(env_id, i) for i in range(num_cpu)])
 # model = A2C("MlpPolicy", env, verbose=0)
 
 # By default, we use a DummyVecEnv as it is usually faster (cf doc)
+env_id = "CartPole-v1"
+num_cpu = 10  # Number of processes to use
 vec_env = make_vec_env(env_id, n_envs=num_cpu, monitor_dir="./logs/")
 
 """
@@ -51,7 +51,7 @@ n_meta_steps = 60 (344s)
 """
 normalize_values     = False
 learning_rate_rl     = 7e-4 # 7e-4
-learning_rate_dopa   = 1e-4 # 1e-3, 1e-5
+learning_rate_dopa   = 1e-4 # 1e-4
 n_meta_steps         = 1
 trackers_window_size = 100 * num_cpu
 net_arch             = dict(pi=[64, 64], vf=[64, 64], re=[64,64], 
@@ -71,7 +71,7 @@ eval_env = gym.make(env_id)
 mean_reward, std_reward = evaluate_policy(model, eval_env, n_eval_episodes=10)
 print(f"Before training - Mean reward: {mean_reward} +/- {std_reward:.2f}")
 
-n_timesteps =  10 * vec_env.num_envs * 1000
+n_timesteps =  20 * vec_env.num_envs * 1000
 
 # Multiprocessed RL Training
 start_time = time.time()
@@ -79,7 +79,7 @@ model.learn(n_timesteps)
 total_time_multi = time.time() - start_time
 
 print(
-    f"Took {total_time_multi:.2f}s for multiprocessed version - {n_timesteps / total_time_multi:.2f} FPS"
+    f"\nTook {total_time_multi:.2f}s for multiprocessed version - {n_timesteps / total_time_multi:.2f} FPS"
 )
 
 # Evaluate the trained agent

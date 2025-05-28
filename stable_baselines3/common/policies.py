@@ -1053,10 +1053,10 @@ class ActorCriticDopaPolicy(BasePolicy):
         td = self.mlp_extractor.td_net(input_to_td)
         return td
 
-    def gen_dopa(self, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor) -> th.Tensor:
-        rewards_to_da = self._run_reward(rewards)
-        dopa = self._run_dopa(rewards_to_da, next_values, values, dones)
-        return dopa
+    # def gen_dopa(self, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor) -> th.Tensor:
+    #     rewards_to_da = self._run_reward(rewards)
+    #     dopa = self._run_dopa(rewards_to_da, next_values, values, dones)
+    #     return dopa
 
     def _run_vp(self, features: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
         if self.share_features_extractor:

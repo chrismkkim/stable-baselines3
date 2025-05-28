@@ -13,12 +13,18 @@ def plot_loss():
     dirname = "/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/"
     loss_meta = np.loadtxt(dirname + "traindata/loss_meta.txt")
     loss_rl = np.loadtxt(dirname + "traindata/loss_rl.txt")
-    # adva = np.loadtxt(dirname + "traindata/adva.txt")
+    adva = np.loadtxt(dirname + "traindata/adva.txt")
     value = np.loadtxt(dirname + "traindata/value.txt")
-    # next_value = np.loadtxt(dirname + "traindata/next_value.txt")
-    # reward = np.loadtxt(dirname + "traindata/reward.txt")
+    next_value = np.loadtxt(dirname + "traindata/next_value.txt")
+    dones = np.loadtxt(dirname + "traindata/dones.txt")
+    reward = np.loadtxt(dirname + "traindata/reward.txt")
     # time_switch = np.loadtxt(dirname + "traindata/time_switch.txt")
     time_ = np.loadtxt(dirname + "traindata/time.txt")
+    
+    
+    # adva_calc = reward + (1-dones) * next_value - value
+    
+    
     
     def movavg(x, wid=20):
         nstep = x.shape[0]
@@ -44,7 +50,6 @@ def plot_loss():
     # factor = 0.1
     plt.figure(figsize=(10,8))
     ax1 = plt.subplot(311)
-    # ax1.set_title("Dopa: " + str(dopa_rate) + ",  RL: " + str(rl_rate) + ", Meta-steps: " + str(n_meta_steps), fontsize=15)
     # if isinstance(time_switch, float):
     #     ax1.axvline(time_switch, c='r', linestyle='--')
     # else:
@@ -70,7 +75,8 @@ def plot_loss():
     ax2.set_xlabel('epoch')
 
     ax3 = plt.subplot(313, sharex=ax1)
-    ax3.plot(time_, value, marker='.', linestyle='')
+    ax3.plot(time_, adva, marker='.', linestyle='')
+    # ax3.plot(time_, value, marker='.', linestyle='')
     # ax3.plot(time_, next_value, marker='.', linestyle='', color='r')
     # if isinstance(time_switch, float):
     #     ax3.axvline(time_switch, c='r', linestyle='--')
@@ -78,8 +84,9 @@ def plot_loss():
     #     for ti in range(len(time_switch_)):    
     #         if (ti % 2 == 1) and (ti + 1 < len(time_switch_)):
     #             ax3.axvspan(time_switch_[ti], time_switch_[ti+1], color='gray', alpha=0.2, ec='None')            
-    ax3.set_ylabel('Value')
+    ax3.set_ylabel('Value / Advantages')
     ax3.set_xlabel('epoch')
+    # plt.ylim([-0.2,1.2])
     plt.tight_layout()
     plt.show()
     # plt.savefig(dirname + 'figure/meta_dopa.png', dpi=100)

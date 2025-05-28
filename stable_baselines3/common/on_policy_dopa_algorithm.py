@@ -288,7 +288,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
                     _last_dones_tensor   = th.as_tensor(self._last_episode_starts).view(-1,1)
                     _last_rewards_tensor = th.as_tensor(_last_rewards).view(-1,1)
                     # generate dopa
-                    dopa = self.policy.gen_dopa(_last_rewards_tensor, values, _last_values, _last_dones_tensor)
+                    dopa = self.policy.gen_td(_last_rewards_tensor, values, _last_values, _last_dones_tensor)
 
             n_steps += 1
             
@@ -320,7 +320,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
             # generate dopa for the last timestep
             _last_dones_tensor   = th.as_tensor(self._last_episode_starts).view(-1,1)
             _last_rewards_tensor = th.as_tensor(_last_rewards).view(-1,1)
-            _last_dopa = self.policy.gen_dopa(_last_rewards_tensor, values, _last_values, _last_dones_tensor)
+            _last_dopa = self.policy.gen_td(_last_rewards_tensor, values, _last_values, _last_dones_tensor)
 
         """
         (6) add the last dopa to rollout data
