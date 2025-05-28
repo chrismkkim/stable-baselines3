@@ -200,6 +200,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.normalize_values = normalize_values
         # for training
         self.train_meta = True
+        self.param_reset = True
         self.n_record = 10
         self.floss_meta = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/loss_meta.txt","w")
         self.floss_rl   = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/loss_rl.txt","w")
@@ -244,12 +245,26 @@ class Dopa(OnPolicyDopaAlgorithm):
         ctx_dopa = nullcontext()
         ctx_rl   = th.no_grad() if self.train_meta else nullcontext()
         
-        use_dopa = True
+        progress = time_step / total_timesteps
         # This will only loop once (get all data in one go)
         for rollout_data in self.rollout_buffer.get(batch_size=None):       
             
-            loss_meta, loss_rl = self.train_RL_using_dopa(rollout_data)
-            
+            if progress < 0.5:
+                loss_meta, loss_rl = self.metatrain_using_dopa(rollout_data)
+            else:
+                if self.param_reset:
+                    # reset parameters of value / policy networks
+                    for module in self.policy.mlp_extractor.value_net.modules():
+                        if hasattr(module, 'reset_parameters'):
+                            module.reset_parameters()
+                    for module in self.policy.mlp_extractor.policy_net.modules():
+                        if hasattr(module, 'reset_parameters'):
+                            module.reset_parameters()           
+                    self.param_reset = False     
+                    
+                loss_meta, loss_rl = self.RL_using_trained_dopa(rollout_data)
+                # loss_meta, loss_rl = th.tensor(0), th.tensor(0)
+                                                
             # Clip grad norm
             # th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
             
@@ -268,7 +283,7 @@ class Dopa(OnPolicyDopaAlgorithm):
             self.ftime_switch.close()
             self.fadva.close()
                             
-    def train_RL_using_dopa(self, rollout_data:RolloutBufferSamples):
+    def metatrain_using_dopa(self, rollout_data:RolloutBufferSamples):
         """
         Use model TD to train RL network
         """
@@ -283,6 +298,18 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.policy.optimizer_meta.step()           
             
         return loss_meta, loss_rl                 
+    
+    def RL_using_trained_dopa(self, rollout_data:RolloutBufferSamples):
+        # use trained D to train value / policy networks
+        with th.no_grad():
+            loss_meta = self.compute_metaloss_using_rollout(rollout_data)
+        loss_rl = self.compute_rlloss_using_dopa(rollout_data)
+        # Optimization step
+        self.policy.optimizer.zero_grad()
+        loss_rl.backward()
+        self.policy.optimizer.step()
+
+        return loss_meta, loss_rl            
 
     def train_RL_using_td(self, rollout_data:RolloutBufferSamples):
         loss_meta = self.compute_metaloss_using_rollout(rollout_data)                

@@ -71,7 +71,7 @@ eval_env = gym.make(env_id)
 mean_reward, std_reward = evaluate_policy(model, eval_env, n_eval_episodes=10)
 print(f"Before training - Mean reward: {mean_reward} +/- {std_reward:.2f}")
 
-n_timesteps =  20 * vec_env.num_envs * 1000
+n_timesteps =  40 * vec_env.num_envs * 1000
 
 # Multiprocessed RL Training
 start_time = time.time()
@@ -87,7 +87,7 @@ mean_reward, std_reward = evaluate_policy(model, eval_env, n_eval_episodes=100)
 print(f"After training - Mean reward: {mean_reward} +/- {std_reward:.2f}")
 
 
-runDA_plotloss.plot_loss()
+# runDA_plotloss.plot_loss()
 
 """
 # show the trained agents
