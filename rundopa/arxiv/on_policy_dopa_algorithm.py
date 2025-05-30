@@ -11,14 +11,14 @@ from torch.nn import functional as F
 import matplotlib.pyplot as plt
 
 from stable_baselines3.common.base_class import BaseAlgorithm
-from stable_baselines3.common.buffers import DictRolloutBuffer, RolloutBuffer, MetaRolloutBuffer
+from stable_baselines3.common.buffers import DictRolloutBuffer, RolloutDopaBuffer, MetaRolloutBuffer
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.policies import ActorCriticDopaPolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import obs_as_tensor, safe_mean
 from stable_baselines3.common.vec_env import VecEnv
 
-SelfOnPolicyAlgorithm = TypeVar("SelfOnPolicyAlgorithm", bound="OnPolicyDopaAlgorithm")
+SelfOnPolicyDopaAlgorithm = TypeVar("SelfOnPolicyDopaAlgorithm", bound="OnPolicyDopaAlgorithm")
 
 
 class OnPolicyDopaAlgorithm(BaseAlgorithm):
@@ -58,7 +58,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
     :param supported_action_spaces: The action spaces supported by the algorithm.
     """
 
-    rollout_buffer: RolloutBuffer
+    rollout_buffer: RolloutDopaBuffer
     meta_rollout_buffer: MetaRolloutBuffer
     policy: ActorCriticDopaPolicy
 
@@ -78,7 +78,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         max_grad_norm: float,
         use_sde: bool,
         sde_sample_freq: int,
-        rollout_buffer_class: Optional[type[RolloutBuffer]] = None,
+        rollout_buffer_class: Optional[type[RolloutDopaBuffer]] = None,
         meta_rollout_buffer_class: Optional[type[MetaRolloutBuffer]] = None,
         rollout_buffer_kwargs: Optional[dict[str, Any]] = None,
         stats_window_size: int = 100,
@@ -132,7 +132,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
             if isinstance(self.observation_space, spaces.Dict):
                 self.rollout_buffer_class = DictRolloutBuffer
             else:
-                self.rollout_buffer_class = RolloutBuffer
+                self.rollout_buffer_class = RolloutDopaBuffer
                 self.meta_rollout_buffer_class = MetaRolloutBuffer
 
         self.rollout_buffer = self.rollout_buffer_class(
@@ -190,11 +190,11 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         self,
         env: VecEnv,
         callback: BaseCallback,
-        rollout_buffer: RolloutBuffer,
+        rollout_buffer: RolloutDopaBuffer,
         n_rollout_steps: int,
     ) -> bool:
         """
-        Collect experiences using the current policy and fill a ``RolloutBuffer``.
+        Collect experiences using the current policy and fill a ``RolloutDopaBuffer``.
         The term rollout here refers to the model-free notion and should not
         be used with the concept of rollout used in model-based RL or planning.
 
@@ -346,14 +346,14 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         raise NotImplementedError
 
     def learn(
-        self: SelfOnPolicyAlgorithm,
+        self: SelfOnPolicyDopaAlgorithm,
         total_timesteps: int,
         callback: MaybeCallback = None,
         log_interval: int = 1,
         tb_log_name: str = "OnPolicyAlgorithm",
         reset_num_timesteps: bool = True,
         progress_bar: bool = False,
-    ) -> SelfOnPolicyAlgorithm:
+    ) -> SelfOnPolicyDopaAlgorithm:
         iteration = 0
 
         total_timesteps, callback = self._setup_learn(
@@ -418,7 +418,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         rollout_last_obs: np.ndarray
     ) -> bool:
         """
-        Collect experiences using the current policy and fill a ``RolloutBuffer``.
+        Collect experiences using the current policy and fill a ``RolloutDopaBuffer``.
         The term rollout here refers to the model-free notion and should not
         be used with the concept of rollout used in model-based RL or planning.
 

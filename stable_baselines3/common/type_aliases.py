@@ -27,8 +27,16 @@ PyTorchObs = Union[th.Tensor, TensorDict]
 # and outputs a scalar (e.g. learning rate, clip range, ...)
 Schedule = Callable[[float], float]
 
-
 class RolloutBufferSamples(NamedTuple):
+    observations: th.Tensor
+    actions: th.Tensor
+    old_values: th.Tensor
+    old_log_prob: th.Tensor
+    advantages: th.Tensor
+    returns: th.Tensor
+
+
+class RolloutDopaBufferSamples(NamedTuple):
     observations: th.Tensor
     actions: th.Tensor
     old_values: th.Tensor

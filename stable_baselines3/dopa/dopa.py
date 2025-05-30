@@ -4,10 +4,10 @@ import torch as th
 from gymnasium import spaces
 from torch.nn import functional as F
 from contextlib import nullcontext
-from stable_baselines3.common.buffers import RolloutBuffer, MetaRolloutBuffer
-from stable_baselines3.common.on_policy_dopa_algorithm import OnPolicyDopaAlgorithm
+from stable_baselines3.common.buffers import RolloutDopaBuffer, MetaRolloutBuffer
+from stable_baselines3.common.on_policy_algorithm import OnPolicyDopaAlgorithm
 from stable_baselines3.common.policies import ActorCriticCnnPolicy, ActorCriticPolicy, ActorCriticDopaPolicy, BasePolicy, MultiInputActorCriticPolicy
-from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule, RolloutBufferSamples
+from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule, RolloutDopaBufferSamples
 from stable_baselines3.common.utils import explained_variance
 
 SelfDopa = TypeVar("SelfDopa", bound="Dopa")
@@ -137,7 +137,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         use_rms_prop: bool = True,
         use_sde: bool = False,
         sde_sample_freq: int = -1,
-        rollout_buffer_class: Optional[type[RolloutBuffer]] = None,
+        rollout_buffer_class: Optional[type[RolloutDopaBuffer]] = None,
         meta_rollout_buffer_class: Optional[type[MetaRolloutBuffer]] = None,
         rollout_buffer_kwargs: Optional[dict[str, Any]] = None,
         normalize_advantage: bool = False,
@@ -274,9 +274,9 @@ class Dopa(OnPolicyDopaAlgorithm):
             self.ftime_switch.close()
             self.fadva.close()                            
 
-    def metalearn(self, rollout_data:RolloutBufferSamples):
+    def metalearn(self, rollout_data:RolloutDopaBufferSamples):
         """
-        TD network learns from rolling data. Model TD is used to train the RL network
+        TD network learns from rollout data. Model TD is used to train the RL network
         """
         loss_meta = self.compute_metaloss_using_rollout(rollout_data)
         loss_rl   = self.compute_rlloss_using_dopa(rollout_data)
@@ -291,7 +291,7 @@ class Dopa(OnPolicyDopaAlgorithm):
     
     def train_dopa_using_dummy(self, time_step, total_timesteps):
         """
-        TD network learns from rolling data. Model TD is used to train the RL network
+        TD network learns from dummy data. 
         """
         loss_meta = self.compute_metaloss_using_dummy(time_step, total_timesteps)
         loss_rl   = th.tensor(0)
@@ -301,7 +301,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.policy.optimizer_meta.step()                       
         return loss_meta, loss_rl                     
         
-    def rl_with_dopa(self, rollout_data:RolloutBufferSamples):
+    def rl_with_dopa(self, rollout_data:RolloutDopaBufferSamples):
         # use trained D to train value / policy networks
         with th.no_grad():
             loss_meta = self.compute_metaloss_using_rollout(rollout_data)
@@ -312,7 +312,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.policy.optimizer.step()
         return loss_meta, loss_rl                
 
-    def compute_metaloss_using_rollout(self, rollout_data:RolloutBufferSamples):             
+    def compute_metaloss_using_rollout(self, rollout_data:RolloutDopaBufferSamples):             
         advantages = rollout_data.advantages
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)            
@@ -360,7 +360,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         return loss_meta
                     
                     
-    def compute_rlloss_using_dopa(self, rollout_data:RolloutBufferSamples):    
+    def compute_rlloss_using_dopa(self, rollout_data:RolloutDopaBufferSamples):    
         actions = rollout_data.actions
         if isinstance(self.action_space, spaces.Discrete):
             # Convert discrete action from float to long
@@ -392,7 +392,7 @@ class Dopa(OnPolicyDopaAlgorithm):
                 module.reset_parameters()           
         self.param_reset = False                                 
     
-    def train_RL_using_td(self, rollout_data:RolloutBufferSamples):
+    def train_RL_using_td(self, rollout_data:RolloutDopaBufferSamples):
         loss_meta = self.compute_metaloss_using_rollout(rollout_data)                
         loss_rl   = self.compute_rlloss_using_td(rollout_data)        
         # Optimization step
@@ -405,7 +405,7 @@ class Dopa(OnPolicyDopaAlgorithm):
             
         return loss_meta, loss_rl                     
                             
-    def pretrain_with_dummy(self, time_step, total_timesteps, rollout_data:RolloutBufferSamples):
+    def pretrain_with_dummy(self, time_step, total_timesteps, rollout_data:RolloutDopaBufferSamples):
 
         if self.train_meta:
             """
@@ -441,7 +441,7 @@ class Dopa(OnPolicyDopaAlgorithm):
             
         return loss_meta, loss_rl             
         
-    def pretrain_with_rollout(self, time_step, total_timesteps, rollout_data:RolloutBufferSamples):
+    def pretrain_with_rollout(self, time_step, total_timesteps, rollout_data:RolloutDopaBufferSamples):
 
         if self.train_meta:
             """
@@ -505,7 +505,7 @@ class Dopa(OnPolicyDopaAlgorithm):
             self._n_updates += 1                            
         
 
-    def compute_rlloss_using_td(self, rollout_data:RolloutBufferSamples):    
+    def compute_rlloss_using_td(self, rollout_data:RolloutDopaBufferSamples):    
         actions = rollout_data.actions
         if isinstance(self.action_space, spaces.Discrete):
             # Convert discrete action from float to long
@@ -561,7 +561,7 @@ class Dopa(OnPolicyDopaAlgorithm):
             loss_meta = F.mse_loss(advantages, dopa)                  
         return loss_meta                    
                 
-    def save_train_data(self, time_step:int, loss_meta:th.Tensor, loss_rl:th.Tensor, rollout_data:RolloutBufferSamples):                            
+    def save_train_data(self, time_step:int, loss_meta:th.Tensor, loss_rl:th.Tensor, rollout_data:RolloutDopaBufferSamples):                            
         self.ftime.write(f"{time_step}\n")
         self.floss_meta.write(f"{loss_meta.detach().item()}\n")
         self.floss_rl.write(f"{loss_rl.detach().item()}\n")
@@ -571,7 +571,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.fdones.write(f"{rollout_data.next_dones.float().mean().detach().item()}\n")
         self.freward.write(f"{rollout_data.rewards.mean().detach().item()}\n")                
 
-    def save_all_train_data(self, time_step:int, loss_meta:th.Tensor, loss_rl:th.Tensor, rollout_data:RolloutBufferSamples):                            
+    def save_all_train_data(self, time_step:int, loss_meta:th.Tensor, loss_rl:th.Tensor, rollout_data:RolloutDopaBufferSamples):                            
         self.ftime.write(f"{time_step}\n")
         self.floss_meta.write(f"{loss_meta.detach().item()}\n")
         self.floss_rl.write(f"{loss_rl.detach().item()}\n")
