@@ -25,3 +25,11 @@ for i in range(1000):
     # if done:
     #   obs = vec_env.reset()
     
+# LunarLander-v2:
+#   n_envs: 8
+#   n_timesteps: !!float 2e5
+#   policy: 'MlpPolicy'
+#   gamma: 0.995
+#   n_steps: 5
+#   learning_rate: lin_0.00083
+#   ent_coef: 0.00001

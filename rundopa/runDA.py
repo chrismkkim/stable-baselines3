@@ -39,8 +39,10 @@ def make_env(env_id: str, rank: int, seed: int = 0) -> Callable:
 
 # By default, we use a DummyVecEnv as it is usually faster (cf doc)
 env_id = "CartPole-v1"
+# env_id = "LunarLander-v3"
 num_cpu = 10  # Number of processes to use
 vec_env = make_vec_env(env_id, n_envs=num_cpu, monitor_dir="./logs/")
+# vec_env = make_vec_env(env_id, n_envs=num_cpu, vec_env_cls=SubprocVecEnv)
 
 """
 lr_rlnet   = 5e-6, 7e-4
@@ -71,7 +73,7 @@ eval_env = gym.make(env_id)
 mean_reward, std_reward = evaluate_policy(model, eval_env, n_eval_episodes=10)
 print(f"Before training - Mean reward: {mean_reward} +/- {std_reward:.2f}")
 
-n_timesteps =  40 * vec_env.num_envs * 1000
+n_timesteps =  20 * vec_env.num_envs * 1000
 
 # Multiprocessed RL Training
 start_time = time.time()
