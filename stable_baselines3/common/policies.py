@@ -964,7 +964,7 @@ class ActorCriticDopaPolicy(BasePolicy):
 
         self.value_net  = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
         self.reward_net = nn.Linear(self.mlp_extractor.latent_dim_re, 1)
-        self.dopa_net   = nn.Linear(self.mlp_extractor.latent_dim_da, 1)
+        # self.dopa_net   = nn.Linear(self.mlp_extractor.latent_dim_da, 1)
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
         if self.ortho_init:
@@ -1075,13 +1075,13 @@ class ActorCriticDopaPolicy(BasePolicy):
         rewards_to_da = self.reward_net(latent_re)
         return rewards_to_da
 
-    def _run_dopa(self, rewards_to_da: th.Tensor, next_values_to_da: th.Tensor, values_to_da: th.Tensor, dones: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
-        # (1) all inputs to dopa network
-        input_to_da   = self.mlp_extractor.forward_r2d(rewards_to_da) + self.mlp_extractor.forward_nextv2d(next_values_to_da) + self.mlp_extractor.forward_v2d(values_to_da) + self.mlp_extractor.forward_d2d(th.tensor(1) - dones.float())
-        # (2) generate dopa 
-        latent_da     = self.mlp_extractor.forward_dopa(input_to_da)
-        dopa          = self.dopa_net(latent_da)        
-        return dopa
+    # def _run_dopa(self, rewards_to_da: th.Tensor, next_values_to_da: th.Tensor, values_to_da: th.Tensor, dones: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
+    #     # (1) all inputs to dopa network
+    #     input_to_da   = self.mlp_extractor.forward_r2d(rewards_to_da) + self.mlp_extractor.forward_nextv2d(next_values_to_da) + self.mlp_extractor.forward_v2d(values_to_da) + self.mlp_extractor.forward_d2d(th.tensor(1) - dones.float())
+    #     # (2) generate dopa 
+    #     latent_da     = self.mlp_extractor.forward_dopa(input_to_da)
+    #     dopa          = self.dopa_net(latent_da)        
+    #     return dopa
         
     def extract_features(  # type: ignore[override]
         self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None
@@ -1160,13 +1160,6 @@ class ActorCriticDopaPolicy(BasePolicy):
         entropy = distribution.entropy()
         return values, log_prob, entropy
 
-    # def _run_dopa(self, rewards_to_da: th.Tensor, next_values_to_da: th.Tensor, values_to_da: th.Tensor, dones: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
-    #     # (1) all inputs to dopa network
-    #     input_to_da   = self.mlp_extractor.forward_r2d(rewards_to_da) + th.logical_not(dones) * self.mlp_extractor.forward_nextv2d(next_values_to_da) + self.mlp_extractor.forward_v2d(values_to_da)
-    #     # (2) generate dopa 
-    #     latent_da     = self.mlp_extractor.forward_dopa(input_to_da)
-    #     dopa          = self.dopa_net(latent_da)        
-    #     return dopa
         
     def get_distribution(self, obs: PyTorchObs) -> Distribution:
         """

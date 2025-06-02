@@ -158,7 +158,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         
         self.policy = self.policy_class(  # type: ignore[assignment]
             self.observation_space, self.action_space, self.lr_schedule, 
-            learning_rate_dopa = self.learning_rate_dopa, net_arch = self.net_arch,
+            learning_rate_dopa = self.learning_rate_dopa,
             use_sde=self.use_sde, **self.policy_kwargs
         )
         self.policy = self.policy.to(self.device)
