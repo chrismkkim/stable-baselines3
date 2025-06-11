@@ -60,7 +60,7 @@ def main():
     env_ids = [env_id_meta, env_id_rl]
     
     # path to log 
-    path        = '/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/trainedmodel/'
+    path        = '/Users/kimchm/Documents/RL/trainedmodel/'
     path_envs   = env_id_meta + '_' + env_id_rl + '/'
     path_to_log = path + path_envs + sim_id
     path_to_par = 'hyperparams/'
@@ -78,7 +78,8 @@ def main():
             "--log-folder", path_to_log,
             "--tensorboard-log", path_to_log,
             "--verbose", "0",
-            "--train-envs", f"meta:'{env_ids[0]}'", f"rl:'{env_ids[1]}'"
+            "--train-envs", f"meta:'{env_ids[0]}'", f"rl:'{env_ids[1]}'",
+            "--eval-episodes", "100"
         ]
 
 
@@ -89,17 +90,7 @@ def main():
             print(f"\nERROR: `train.py --algo {algo} --env {env_ids[i]}` exited with code {e.returncode}\n")
             sys.exit(e.returncode)
 
-    print("\nAll done: both Dopa and A2C have finished training on:", env_ids[i])
-  
-  # 'meta:'+env_ids[0] +'rl:'+env_ids[1]
-        # cmd = [
-        #     sys.executable,         # ensures same Python interpreter
-        #     "train.py",
-        #     "--algo", algos[i],
-        #     "--env", env_ids[i],
-        #     "--gym-env", "CartPole-v1",
-        #     "--log-folder", path_to_log
-        # ]  
+    print("\nAll done: both Dopa and A2C have finished training on:", env_ids[i])  
 
 if __name__ == "__main__":
     main()

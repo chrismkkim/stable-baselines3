@@ -2,6 +2,7 @@ import time
 
 import gymnasium as gym
 import numpy as np
+import os
 
 from stable_baselines3 import Dopa
 from stable_baselines3 import A2C
@@ -33,11 +34,15 @@ def make_env(env_id: str, rank: int, seed: int = 0) -> Callable:
     set_random_seed(seed)
     return _init
 
-# # Create the vectorized environment
-# env = SubprocVecEnv([make_env(env_id, i) for i in range(num_env)])
-# model = A2C("MlpPolicy", env, verbose=0)
-
-
+num_env            = 10  # Number of processes to use
+n_timesteps        = 10 * num_env * 1000
+env_id_meta        = "CartPole-v1" #"LunarLander-v3"
+env_id_rl          = "CartPole-v1" #CartPole-v1
+train_envs         = [env_id_meta, env_id_rl]
+path               = '/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/trainedmodel/'
+path_envs          = env_id_meta + '_' + env_id_rl + '/'
+path_to_log        = path + path_envs + '1' + '/'
+metamodel_path     = path_to_log + env_id_meta + '_' + '1' 
 dopa_kwargs = {
     "policy":            "MlpPolicy",
     "env":               None,
@@ -51,35 +56,37 @@ dopa_kwargs = {
     "net_arch":          {"pi": [64, 64], "vf": [64, 64], "re":[64,64], "v2d":[64], "r2d":[64], "d2d":[64], "da":[64,64], "td":[64,64,64,1]},
     "normalize_values":  False,
     "tracker_window_size": 1000,
+    "train_envs":        {"meta":env_id_meta, "rl":env_id_rl},
+    "log_path":          path_to_log
 }
-save_path          = '/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/trainedmodel/'
-num_env            = 10  # Number of processes to use
-n_timesteps        = 10 * num_env * 1000
-env_id_meta        = "CartPole-v1" #"LunarLander-v3"
-env_id_rl          = "LunarLander-v3"
 
-#----------------------#
-#    Meta learning
-#----------------------#
-# env for meta learning
-vec_env_meta       = make_vec_env(env_id_meta, n_envs=num_env)
-dopa_kwargs["env"] = vec_env_meta
-traintype_meta     = True
-meta_model         = Dopa(traintype_meta=traintype_meta, **dopa_kwargs)
+meta_train = True
 
-#--- Before learning ---#
-# We create a separate environment for evaluation
-eval_env = gym.make(env_id_meta)
-mean_reward, std_reward = evaluate_policy(meta_model, eval_env, n_eval_episodes=10)
-print(f"Before training - Mean reward: {mean_reward} +/- {std_reward:.2f}")
+if meta_train:
+    #----------------------#
+    #    Meta learning
+    #----------------------#
+    if not os.path.isdir(metamodel_path):
+        os.makedirs(metamodel_path)
+    # env for meta learning
+    vec_env_meta       = make_vec_env(env_id_meta, n_envs=num_env)
+    dopa_kwargs["env"] = vec_env_meta
+    traintype_meta     = True
+    meta_model         = Dopa(traintype_meta=traintype_meta, **dopa_kwargs)
 
-#--- Meta learning ---#
-start_time = time.time()
-meta_model.learn(n_timesteps)
-total_time_multi = time.time() - start_time
-print(f"\nTook {total_time_multi:.2f}s for meta learning")
-# save trained model
-meta_model.save(save_path + 'dopa')
+    #--- Before learning ---#
+    # We create a separate environment for evaluation
+    eval_env = gym.make(env_id_meta)
+    mean_reward, std_reward = evaluate_policy(meta_model, eval_env, n_eval_episodes=10)
+    print(f"Before training - Mean reward: {mean_reward} +/- {std_reward:.2f}")
+
+    #--- Meta learning ---#
+    start_time = time.time()
+    meta_model.learn(n_timesteps)
+    total_time_multi = time.time() - start_time
+    print(f"\nTook {total_time_multi:.2f}s for meta learning")
+    # save trained model
+    meta_model.save(metamodel_path + '/best_model.zip')
 
 
 #----------------------#
@@ -90,13 +97,6 @@ vec_env_rl         = make_vec_env(env_id_rl, n_envs=num_env)
 dopa_kwargs["env"] = vec_env_rl
 traintype_meta     = False
 rl_model           = Dopa(traintype_meta=traintype_meta, **dopa_kwargs)
-# Use the trained TD network
-meta_model_sd = meta_model.policy.mlp_extractor.state_dict()
-rl_model_sd   = rl_model.policy.mlp_extractor.state_dict()
-for layer in range(len(dopa_kwargs["net_arch"]["td"])):
-    rl_model_sd['td_net.'+str(2*layer)+'.weight'] = meta_model_sd['td_net.'+str(2*layer)+'.weight'].clone()
-    rl_model_sd['td_net.'+str(2*layer)+'.bias']   = meta_model_sd['td_net.'+str(2*layer)+'.bias'].clone()    
-rl_model.policy.mlp_extractor.load_state_dict(rl_model_sd)
 
 #--- Reinforcement learning ---#
 start_time = time.time()

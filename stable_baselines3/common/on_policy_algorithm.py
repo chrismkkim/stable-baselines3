@@ -159,6 +159,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
         self.policy = self.policy_class(  # type: ignore[assignment]
             self.observation_space, self.action_space, self.lr_schedule, 
             learning_rate_dopa = self.learning_rate_dopa,
+            gamma = self.gamma,
             use_sde=self.use_sde, **self.policy_kwargs
         )
         self.policy = self.policy.to(self.device)
@@ -247,7 +248,13 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
             (2) step
             """
             new_obs, rewards, dones, infos = env.step(clipped_actions)
-
+            """
+            Save the raw_rewards. rewards get modified when episode is truncated (reached max step).
+                rewards = raw_rewards + gamma * v_terminal
+            Use the raw_rewards to find out v_terminal. See below.
+            """
+            raw_rewards = np.copy(rewards) 
+            
             self.num_timesteps += env.num_envs
 
             # Give access to local variables
@@ -261,7 +268,12 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
                 # Reshape in case of discrete action
                 actions = actions.reshape(-1, 1)
             """
-            Handle timeout
+            If max-step is reached, 
+                reward   = raw_reward + gamma * v_terminal
+            In this way, the advantage (or TD) is computed as usual even though it reached a terminal state.
+                advantage = reward + gamma*(1-d)*v' - v where d = 1
+                          = reward - v
+                          = raw_reward + gamma * v_terminal - v
             """
             # Handle timeout by bootstrapping with value function
             # see GitHub issue #633
@@ -274,8 +286,11 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
                     terminal_obs = self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
                     with th.no_grad():
                         terminal_value = self.policy.predict_values(terminal_obs)[0]  # type: ignore[arg-type]
-                    rewards[idx] += self.gamma * terminal_value
-            
+                    rewards[idx] += self.gamma * terminal_value            
+                # elif done:
+                #     # terminal done
+                #     x=1
+                    
             """
             (3) compute dopa
             """
@@ -286,8 +301,9 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
                     # convert to tensor
                     _last_dones_tensor   = th.as_tensor(self._last_episode_starts).view(-1,1)
                     _last_rewards_tensor = th.as_tensor(_last_rewards).view(-1,1)
+                    _last_raw_rewards_tensor = th.as_tensor(_last_raw_rewards).view(-1,1)
                     # generate dopa
-                    dopa = self.policy.gen_td(_last_rewards_tensor, values, _last_values, _last_dones_tensor)
+                    dopa = self.policy.gen_td(_last_rewards_tensor, values, _last_values, _last_dones_tensor, _last_raw_rewards_tensor)
 
             n_steps += 1
             
@@ -298,6 +314,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
                 self._last_obs,  # type: ignore[arg-type]
                 actions,
                 rewards,
+                raw_rewards,
                 self._last_episode_starts,  # type: ignore[arg-type]
                 values,
                 log_probs,
@@ -306,6 +323,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
             self._last_obs = new_obs  # type: ignore[assignment]
             self._last_episode_starts = dones
             _last_rewards = rewards
+            _last_raw_rewards = raw_rewards
             _last_values  = values
         #---------- End of rollout ----------
         
@@ -319,7 +337,8 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
             # generate dopa for the last timestep
             _last_dones_tensor   = th.as_tensor(self._last_episode_starts).view(-1,1)
             _last_rewards_tensor = th.as_tensor(_last_rewards).view(-1,1)
-            _last_dopa = self.policy.gen_td(_last_rewards_tensor, values, _last_values, _last_dones_tensor)
+            _last_raw_rewards_tensor = th.as_tensor(_last_raw_rewards).view(-1,1)
+            _last_dopa = self.policy.gen_td(_last_rewards_tensor, values, _last_values, _last_dones_tensor, _last_raw_rewards_tensor)
 
         """
         (6) add the last dopa to rollout data

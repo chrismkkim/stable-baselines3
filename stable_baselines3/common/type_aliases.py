@@ -48,6 +48,7 @@ class RolloutDopaBufferSamples(NamedTuple):
     returns: th.Tensor
     returns_dopa: th.Tensor
     rewards: th.Tensor
+    raw_rewards: th.Tensor
 
 
 class MetaRolloutBufferSamples(NamedTuple):

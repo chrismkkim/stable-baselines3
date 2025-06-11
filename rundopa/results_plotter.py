@@ -6,6 +6,7 @@ import pandas as pd
 # import matplotlib
 # matplotlib.use('TkAgg')  # Can change to 'Agg' for non-interactive mode
 from matplotlib import pyplot as plt
+import os
 
 from stable_baselines3.common.monitor import load_results
 
@@ -144,10 +145,11 @@ def collect_topk(
 
     data_frames = []
     for folder in dirs:
-        data_frame = load_results(folder)
-        if num_timesteps is not None:
-            data_frame = data_frame[data_frame.l.cumsum() <= num_timesteps]
-        data_frames.append(data_frame)
+        if os.path.isdir(folder):
+            data_frame = load_results(folder)
+            if num_timesteps is not None:
+                data_frame = data_frame[data_frame.l.cumsum() <= num_timesteps]
+            data_frames.append(data_frame)
     xy_list = [ts2xy(data_frame, x_axis) for data_frame in data_frames]
 
     # append all agents
@@ -158,13 +160,15 @@ def collect_topk(
         elif frac == "half":
             idx_half = x > halftime
             y = y[idx_half]
-        ycum.append(y)
-        
+        ycum.append(y)    
+    nagent_ = len(ycum)
+    
     # pick top k performers
-    idx_k = pick_topk(nagents, ycum, topk)
+    topk  = np.min([nagent_, topk])
+    idx_k = pick_topk(nagent_, ycum, topk)
     
     # min len of top k performers
-    minlen = min_len(nagents, ycum, idx_k)
+    minlen = min_len(nagent_, ycum, idx_k)
     
     # reward trajectory of top k performers
     yarr = np.zeros((topk,minlen))    

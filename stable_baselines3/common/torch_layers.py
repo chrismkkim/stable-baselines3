@@ -313,11 +313,6 @@ class MlpExtractorDopa(nn.Module):
             pi_layers_dims = net_arch.get("pi", [])  # Layer sizes of the policy network
             vf_layers_dims = net_arch.get("vf", [])  # Layer sizes of the value network            
             re_layers_dims = net_arch.get("re", [])  # Layer sizes of the reward network
-            # v2d_layers_dims = net_arch.get("v2d", [])  # Layer sizes of the reward network
-            # nextv2d_layers_dims = net_arch.get("v2d", [])  # Layer sizes of the reward network
-            # r2d_layers_dims = net_arch.get("r2d", [])  # Layer sizes of the reward network
-            # d2d_layers_dims = net_arch.get("d2d", [])  # Layer sizes of the reward network
-            # da_layers_dims = net_arch.get("da", [])  # Layer sizes of the dopa network
             td_layers_dims = net_arch.get("td", [])  # Layer sizes of the td network
         else:
             pi_layers_dims = vf_layers_dims = re_layers_dims = net_arch
@@ -325,8 +320,6 @@ class MlpExtractorDopa(nn.Module):
         last_layer_dim_pi = feature_dim
         last_layer_dim_vf = feature_dim        
         last_layer_dim_re = 1
-        # last_layer_dim_v2d = last_layer_dim_nextv2d = last_layer_dim_r2d = last_layer_dim_d2d = 1
-        # last_layer_dim_da = v2d_layers_dims[-1]
         last_layer_dim_td = 4
             
         # Iterate through the policy layers and build the policy net
@@ -344,28 +337,6 @@ class MlpExtractorDopa(nn.Module):
             reward_net.append(nn.Linear(last_layer_dim_re, curr_layer_dim))
             reward_net.append(activation_fn())
             last_layer_dim_re = curr_layer_dim     
-        # # Iterate through the value-dopa layers and build the value-dopa net
-        # for curr_layer_dim in v2d_layers_dims:
-        #     v2d_net.append(nn.Linear(last_layer_dim_v2d, curr_layer_dim))
-        #     last_layer_dim_v2d = curr_layer_dim     
-        # # Iterate through the value-dopa layers and build the value-dopa net
-        # for curr_layer_dim in nextv2d_layers_dims:
-        #     nextv2d_net.append(nn.Linear(last_layer_dim_nextv2d, curr_layer_dim))
-        #     last_layer_dim_nextv2d = curr_layer_dim     
-        # # Iterate through the reward-dopa layers and build the reward-dopa net
-        # for curr_layer_dim in r2d_layers_dims:
-        #     r2d_net.append(nn.Linear(last_layer_dim_r2d, curr_layer_dim))
-        #     last_layer_dim_r2d = curr_layer_dim     
-        # # Iterate through the done-dopa layers and build the done-dopa net
-        # for curr_layer_dim in d2d_layers_dims:
-        #     d2d_net.append(nn.Linear(last_layer_dim_d2d, curr_layer_dim))
-        #     last_layer_dim_d2d = curr_layer_dim     
-        # # Iterate through the dopa layers and build the dopa net
-        # for layer_num, curr_layer_dim in enumerate(da_layers_dims):
-        #     dopa_net.append(nn.Linear(last_layer_dim_da, curr_layer_dim))
-        #     if layer_num < len(da_layers_dims)-1:
-        #         dopa_net.append(activation_fn())
-        #     last_layer_dim_da = curr_layer_dim
         # Iterate through the dopa layers and build the td net
         for layer_num, curr_layer_dim in enumerate(td_layers_dims):
             td_net.append(nn.Linear(last_layer_dim_td, curr_layer_dim))

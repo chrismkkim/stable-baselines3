@@ -803,9 +803,10 @@ class ActorCriticDopaPolicy(BasePolicy):
         action_space: spaces.Space,
         lr_schedule: Schedule,
         learning_rate_dopa: float = 1e-2,
+        gamma: float = 1.0,
         da_net_names: list[str] = ["reward", "v2d", "nextv2d", "r2d", "d2d", "dopa", "td"],
         net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None,
-        activation_fn: type[nn.Module] = nn.Tanh,
+        activation_fn: type[nn.Module] = nn.ReLU,
         ortho_init: bool = True,
         use_sde: bool = False,
         log_std_init: float = 0.0,
@@ -888,6 +889,7 @@ class ActorCriticDopaPolicy(BasePolicy):
 
         self.learning_rate_dopa = learning_rate_dopa
         self.da_net_names = da_net_names
+        self.gamma = gamma
         self._build(lr_schedule)
 
     def _get_constructor_parameters(self) -> dict[str, Any]:
@@ -1048,15 +1050,19 @@ class ActorCriticDopaPolicy(BasePolicy):
         actions = actions.reshape((-1, *self.action_space.shape))  # type: ignore[misc]
         return actions, values, log_prob
 
-    def gen_td(self, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor) -> th.Tensor:
+    def gen_td(self, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor, raw_rewards: th.Tensor) -> th.Tensor:
+        # find truncated agents
+        trunc       = (rewards != raw_rewards).float()
+        # if truncated, d becomes 1- d
+        dones       = (1-trunc) * dones       + trunc * th.logical_not(dones)
+        # if truncated, v_terminal = (r - r_raw)/gamma because SB3 modified the reward to r = r_raw + gamma * v_terminal
+        next_values = (1-trunc) * next_values + trunc * (rewards - raw_rewards) / self.gamma
+        # always use the raw rewards, not the modified rewards as in truncated agents
+        rewards     = raw_rewards.clone()
+        # input to neural network        
         input_to_td = th.cat([rewards, next_values, values, dones], dim=1)
         td = self.mlp_extractor.td_net(input_to_td)
         return td
-
-    # def gen_dopa(self, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor) -> th.Tensor:
-    #     rewards_to_da = self._run_reward(rewards)
-    #     dopa = self._run_dopa(rewards_to_da, next_values, values, dones)
-    #     return dopa
 
     def _run_vp(self, features: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
         if self.share_features_extractor:
@@ -1074,14 +1080,6 @@ class ActorCriticDopaPolicy(BasePolicy):
         # (2) inputs to dopa         
         rewards_to_da = self.reward_net(latent_re)
         return rewards_to_da
-
-    # def _run_dopa(self, rewards_to_da: th.Tensor, next_values_to_da: th.Tensor, values_to_da: th.Tensor, dones: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
-    #     # (1) all inputs to dopa network
-    #     input_to_da   = self.mlp_extractor.forward_r2d(rewards_to_da) + self.mlp_extractor.forward_nextv2d(next_values_to_da) + self.mlp_extractor.forward_v2d(values_to_da) + self.mlp_extractor.forward_d2d(th.tensor(1) - dones.float())
-    #     # (2) generate dopa 
-    #     latent_da     = self.mlp_extractor.forward_dopa(input_to_da)
-    #     dopa          = self.dopa_net(latent_da)        
-    #     return dopa
         
     def extract_features(  # type: ignore[override]
         self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None

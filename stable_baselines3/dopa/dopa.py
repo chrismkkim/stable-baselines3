@@ -127,7 +127,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None,
         normalize_values: bool = False,
         n_steps: int = 1, #<---- used to be 5
-        n_meta_steps: int = 10,
+        n_meta_steps: int = 1,
         tracker_window_size: int = 200,
         gamma: float = 0.99,
         gae_lambda: float = 0.0, #<---- used to be 1.0
@@ -216,6 +216,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.train_meta = True
         self.replace_tdnet = True
         self.n_record = 10
+        # self.ftime = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/time.txt","w")
         # self.floss_meta = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/loss_meta.txt","w")
         # self.floss_rl   = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/loss_rl.txt","w")
         # self.fadva      = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/adva.txt","w")
@@ -224,7 +225,6 @@ class Dopa(OnPolicyDopaAlgorithm):
         # self.fdones      = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/dones.txt","w")
         # self.freward    = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/reward.txt","w")
         # self.ftime_switch = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/time_switch.txt","w")
-        # self.ftime = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/time.txt","w")
         # track training loss
         self.tracker_window_size = tracker_window_size
         self.tracker_metaLoss = MovingAverageTracker(window_size=tracker_window_size)
@@ -256,30 +256,24 @@ class Dopa(OnPolicyDopaAlgorithm):
         for rollout_data in self.rollout_buffer.get(batch_size=None):       
             
             if self.traintype_meta:
+                # if (time_step > total_timesteps /2) and (th.sum(rollout_data.next_dones.float()) > 0):
+                #     x=1
                 # loss_meta, loss_rl = self.meta_dummy(time_step, total_timesteps)
-                _, _ = self.meta_rollout_rl_dopa(rollout_data)
+                # loss_meta, loss_rl = self.meta_rollout_rl_dopa(rollout_data)
+                loss_meta, loss_rl = self.meta_rollout_expanded_rl_dopa(rollout_data)
                 # _, _ = self.meta_rollout_rl_td(rollout_data)
             else:
                 if self.replace_tdnet:
                     self.load_meta_tdnet()
-                _, _ = self.rl_dopa(rollout_data)
+                loss_meta, loss_rl = self.rl_dopa(rollout_data)
                                                 
             # Clip grad norm
             # th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
             
-            # # save training data
-            # if time_step % (self.env.num_envs) == 0:
-            #     self.save_train_data(time_step, loss_meta, loss_rl, rollout_data)    
-            #     # self.save_all_train_data(time_step, loss_meta, loss_rl, rollout_data)    
-                                                                        
-        # if time_step == total_timesteps:
-        #     self.ftime.close()
-        #     self.floss_meta.close()
-        #     self.floss_rl.close()
-        #     self.fvalue.close()
-        #     self.fnext_value.close()
-        #     self.ftime_switch.close()
-        #     self.fadva.close()                            
+            # save training data
+            if time_step % (self.env.num_envs) == 0:
+                self.save_train_data(time_step, loss_meta, loss_rl, rollout_data)    
+                # self.save_all_train_data(time_step, loss_meta, loss_rl, rollout_data)                                                               
 
     def meta_rollout_rl_dopa(self, rollout_data:RolloutDopaBufferSamples):
         """
@@ -296,12 +290,12 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.policy.optimizer_meta.step()                       
         return loss_meta, loss_rl                 
 
-    def meta_rollout_rl_td(self, rollout_data:RolloutDopaBufferSamples):
+    def meta_rollout_expanded_rl_dopa(self, rollout_data:RolloutDopaBufferSamples):
         """
-        TD network learns from rollout data. Actual TD is used to train the RL network
+        TD network learns from rollout data. Model TD is used to train the RL network
         """
-        loss_meta = self.compute_metaloss_using_rollout(rollout_data)
-        loss_rl   = self.compute_rlloss_using_td(rollout_data)
+        loss_meta = self.compute_metaloss_using_rollout_expanded(rollout_data)
+        loss_rl   = self.compute_rlloss_using_dopa(rollout_data)
         # Optimization step
         self.policy.optimizer.zero_grad()
         self.policy.optimizer_meta.zero_grad()
@@ -310,19 +304,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.policy.optimizer.step()
         self.policy.optimizer_meta.step()                       
         return loss_meta, loss_rl                 
-    
-    def meta_dummy(self, time_step, total_timesteps):
-        """
-        TD network learns from dummy data. 
-        """
-        loss_meta = self.compute_metaloss_using_dummy(time_step, total_timesteps)
-        loss_rl   = th.tensor(0)
-        # Optimization step
-        self.policy.optimizer_meta.zero_grad()
-        loss_meta.backward()
-        self.policy.optimizer_meta.step()                       
-        return loss_meta, loss_rl                     
-        
+
     def rl_dopa(self, rollout_data:RolloutDopaBufferSamples):
         # use trained D to train value / policy networks
         with th.no_grad():
@@ -340,6 +322,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)            
         # Convert to tensor
+        raw_rewards_tensor = th.as_tensor(rollout_data.raw_rewards).view(-1,1)
         rewards_tensor     = th.as_tensor(rollout_data.rewards).view(-1,1)
         values_tensor      = th.as_tensor(rollout_data.old_values).view(-1,1)
         next_values_tensor = th.as_tensor(rollout_data.next_values).view(-1,1)
@@ -351,11 +334,180 @@ class Dopa(OnPolicyDopaAlgorithm):
         # Evaluate dopa network
         #   * Use the saved rollout data as inputs.
         #   * The ordering is different from collect_rollouts() in OnPolicyDopaAlogrithm.
-        dopa = self.policy.gen_td(rewards_tensor, next_values_tensor, values_tensor, next_dones_tensor)
+        dopa = self.policy.gen_td(rewards_tensor, next_values_tensor, values_tensor, next_dones_tensor, raw_rewards_tensor)
         dopa = dopa.flatten()        
         loss_meta = F.mse_loss(advantages, dopa)           
         return loss_meta
+    
 
+    def compute_metaloss_using_rollout_expanded(self, rollout_data:RolloutDopaBufferSamples):             
+        advantages = rollout_data.advantages
+        if self.normalize_advantage:
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)            
+        # Convert to tensor
+        rewards_tensor     = th.as_tensor(rollout_data.rewards).view(-1,1)
+        raw_rewards_tensor = th.as_tensor(rollout_data.raw_rewards).view(-1,1)
+        values_tensor      = th.as_tensor(rollout_data.old_values).view(-1,1)
+        next_values_tensor = th.as_tensor(rollout_data.next_values).view(-1,1)
+        next_dones_tensor  = th.as_tensor(rollout_data.next_dones).view(-1,1)                                    
+        if self.normalize_values:
+            values_tensor_mean = values_tensor.mean()
+            values_tensor      = values_tensor      - values_tensor_mean
+            next_values_tensor = next_values_tensor - values_tensor_mean        
+        # compute advantages with flipped terminal states
+        #   i.e., r + dv' - v, intead of the correct value, r + (1-d)v' - v
+        # advtanges_checked = rewards_tensor + self.gamma * (th.tensor(1) - next_dones_tensor.float()) * next_values_tensor - values_tensor
+        # advantages_flipped = rewards_tensor + self.gamma * next_dones_tensor.float() * next_values_tensor - values_tensor
+        
+        _trunc       = (rewards_tensor != raw_rewards_tensor).float()
+        _values      = values_tensor.clone()
+        _dones       = (1-_trunc) * next_dones_tensor  + _trunc * th.logical_not(next_dones_tensor)
+        _next_values = (1-_trunc) * next_values_tensor + _trunc * (rewards_tensor - raw_rewards_tensor) / self.gamma
+        _rewards     = raw_rewards_tensor.clone()
+        _advantages         = _rewards + (th.tensor(1) - _dones) * self.gamma * _next_values - _values
+        _advantages_flipped = _rewards + _dones * self.gamma * _next_values                  - _values
+        
+        assert th.all(advantages == _advantages.flatten())
+        
+        # if not th.all(advantages == _advantages.flatten()):
+        #     x=1
+        # if not th.all(advantages_flipped == _advantages_flipped):
+        #     x=1
+            
+        # expand all inputs
+        rewards_expand     = th.cat([rewards_tensor, rewards_tensor])
+        raw_rewards_expand = th.cat([raw_rewards_tensor, raw_rewards_tensor])
+        values_expand      = th.cat([values_tensor, values_tensor])
+        next_values_expand = th.cat([next_values_tensor, next_values_tensor])
+        next_dones_expand  = th.cat([next_dones_tensor, th.logical_not(next_dones_tensor)])
+        advantages_expand  = th.cat([advantages, _advantages_flipped.flatten()])
+                
+        # Evaluate dopa network
+        #   * Use the saved rollout data as inputs.
+        #   * The ordering is different from collect_rollouts() in OnPolicyDopaAlogrithm.
+        dopa = self.policy.gen_td(rewards_expand, next_values_expand, values_expand, next_dones_expand, raw_rewards_expand)
+        dopa = dopa.flatten()        
+        loss_meta = F.mse_loss(advantages_expand, dopa)
+        return loss_meta
+                    
+    def compute_rlloss_using_dopa(self, rollout_data:RolloutDopaBufferSamples):    
+        actions = rollout_data.actions
+        if isinstance(self.action_space, spaces.Discrete):
+            # Convert discrete action from float to long
+            actions = actions.long().flatten()            
+        # Evaluate actor-critic networks
+        values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
+        values = values.flatten()           
+        # Policy gradient loss
+        policy_loss = -(rollout_data.dopa * log_prob).mean()
+        # Value loss using the TD(gae_lambda) target
+        value_loss = F.mse_loss(rollout_data.returns_dopa, values)
+        # Entropy loss favor exploration
+        if entropy is None:
+            # Approximate entropy when no analytical form
+            entropy_loss = -th.mean(-log_prob)
+        else:
+            entropy_loss = -th.mean(entropy)
+        loss_rl = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss        
+        return loss_rl
+
+
+    def load_meta_tdnet(self) -> None:        
+        # load the trained meta model
+        meta_env_id       = self.train_envs['meta']
+        meta_log          = '1'
+        path_to_metamodel = self.log_path + meta_env_id + '_' + meta_log + '/' + 'best_model.zip'
+        meta_model        = self.load(path_to_metamodel)
+        
+        # use the td net from the trained meta model
+        meta_model_sd = meta_model.policy.mlp_extractor.state_dict()
+        rl_model_sd   = self.policy.mlp_extractor.state_dict()
+        for layer in range(len(self.policy.net_arch["td"])):
+            rl_model_sd['td_net.'+str(2*layer)+'.weight'] = meta_model_sd['td_net.'+str(2*layer)+'.weight'].clone()
+            rl_model_sd['td_net.'+str(2*layer)+'.bias']   = meta_model_sd['td_net.'+str(2*layer)+'.bias'].clone()    
+        self.policy.mlp_extractor.load_state_dict(rl_model_sd)
+        self.replace_tdnet = False          
+        
+
+    def save_train_data(self, time_step:int, loss_meta:th.Tensor, loss_rl:th.Tensor, rollout_data:RolloutDopaBufferSamples):                            
+
+        if self.traintype_meta:
+            ftime_path = self.log_path + 'meta_time.txt'
+            floss_path = self.log_path + 'meta_lossmeta.txt'
+            fdone_path = self.log_path + 'meta_done.txt'
+        else:
+            ftime_path = self.log_path + 'rl_time.txt'
+            floss_path = self.log_path + 'rl_lossmeta.txt'
+            fdone_path = self.log_path + 'rl_done.txt'
+        with open(ftime_path, "a") as ftime:
+            ftime.write(f"{time_step}\n")
+        with open(floss_path, "a") as floss:
+            floss.write(f"{loss_meta.detach().item()}\n")
+        with open(fdone_path, "a") as fdone:
+            fdone.write(f"{rollout_data.next_dones.float().mean().detach().item()}\n")
+            
+        # self.ftime.write(f"{time_step}\n")
+        # self.floss_meta.write(f"{loss_meta.detach().item()}\n")
+        # self.floss_rl.write(f"{loss_rl.detach().item()}\n")
+        # self.fadva.write(f"{rollout_data.advantages.mean().detach().item()}\n")
+        # self.fvalue.write(f"{rollout_data.old_values.mean().detach().item()}\n")
+        # self.fnext_value.write(f"{rollout_data.next_values.mean().detach().item()}\n")
+        # self.fdones.write(f"{rollout_data.next_dones.float().mean().detach().item()}\n")
+        # self.freward.write(f"{rollout_data.rewards.mean().detach().item()}\n")                
+        
+
+    def meta_rollout_rl_td(self, rollout_data:RolloutDopaBufferSamples):
+        """
+        TD network learns from rollout data. Actual TD is used to train the RL network
+        """
+        loss_meta = self.compute_metaloss_using_rollout(rollout_data)
+        loss_rl   = self.compute_rlloss_using_td(rollout_data)
+        # Optimization step
+        self.policy.optimizer.zero_grad()
+        self.policy.optimizer_meta.zero_grad()
+        loss_rl.backward()
+        loss_meta.backward()
+        self.policy.optimizer.step()
+        self.policy.optimizer_meta.step()                       
+        return loss_meta, loss_rl                 
+    
+    
+    def compute_rlloss_using_td(self, rollout_data:RolloutDopaBufferSamples):    
+        actions = rollout_data.actions
+        if isinstance(self.action_space, spaces.Discrete):
+            # Convert discrete action from float to long
+            actions = actions.long().flatten()            
+        # Evaluate actor-critic networks
+        values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
+        values = values.flatten()           
+        # Policy gradient loss
+        policy_loss = -(rollout_data.advantages * log_prob).mean()
+        # Value loss using the TD(gae_lambda) target
+        value_loss = F.mse_loss(rollout_data.returns, values)
+        # Entropy loss favor exploration
+        if entropy is None:
+            # Approximate entropy when no analytical form
+            entropy_loss = -th.mean(-log_prob)
+        else:
+            entropy_loss = -th.mean(entropy)
+        loss_rl = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss        
+        return loss_rl        
+
+
+#--------------------------------------------------------------------#
+#--------------------------------------------------------------------#
+
+    def meta_dummy(self, time_step, total_timesteps):
+        """
+        TD network learns from dummy data. 
+        """
+        loss_meta = self.compute_metaloss_using_dummy(time_step, total_timesteps)
+        loss_rl   = th.tensor(0)
+        # Optimization step
+        self.policy.optimizer_meta.zero_grad()
+        loss_meta.backward()
+        self.policy.optimizer_meta.step()                       
+        return loss_meta, loss_rl                     
 
     def compute_metaloss_using_dummy(self, time_step, total_timesteps):                     
         ndata = 100
@@ -382,67 +534,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         loss_meta = F.mse_loss(advantages, dopa)           
         return loss_meta
                     
-                    
-    def compute_rlloss_using_dopa(self, rollout_data:RolloutDopaBufferSamples):    
-        actions = rollout_data.actions
-        if isinstance(self.action_space, spaces.Discrete):
-            # Convert discrete action from float to long
-            actions = actions.long().flatten()            
-        # Evaluate actor-critic networks
-        values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
-        values = values.flatten()           
-        # Policy gradient loss
-        policy_loss = -(rollout_data.dopa * log_prob).mean()
-        # Value loss using the TD(gae_lambda) target
-        value_loss = F.mse_loss(rollout_data.returns_dopa, values)
-        # Entropy loss favor exploration
-        if entropy is None:
-            # Approximate entropy when no analytical form
-            entropy_loss = -th.mean(-log_prob)
-        else:
-            entropy_loss = -th.mean(entropy)
-        loss_rl = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss        
-        return loss_rl
-        
-
-    def compute_rlloss_using_td(self, rollout_data:RolloutDopaBufferSamples):    
-        actions = rollout_data.actions
-        if isinstance(self.action_space, spaces.Discrete):
-            # Convert discrete action from float to long
-            actions = actions.long().flatten()            
-        # Evaluate actor-critic networks
-        values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
-        values = values.flatten()           
-        # Policy gradient loss
-        policy_loss = -(rollout_data.advantages * log_prob).mean()
-        # Value loss using the TD(gae_lambda) target
-        value_loss = F.mse_loss(rollout_data.returns, values)
-        # Entropy loss favor exploration
-        if entropy is None:
-            # Approximate entropy when no analytical form
-            entropy_loss = -th.mean(-log_prob)
-        else:
-            entropy_loss = -th.mean(entropy)
-        loss_rl = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss        
-        return loss_rl        
-
-    def load_meta_tdnet(self) -> None:        
-        # load the trained meta model
-        meta_env_id       = self.train_envs['meta']
-        meta_log          = '1'
-        path_to_metamodel = self.log_path + meta_env_id + '_' + meta_log + '/' + 'best_model.zip'
-        meta_model        = self.load(path_to_metamodel)
-        
-        # use the td net from the trained meta model
-        meta_model_sd = meta_model.policy.mlp_extractor.state_dict()
-        rl_model_sd   = self.policy.mlp_extractor.state_dict()
-        for layer in range(len(self.policy.net_arch["td"])):
-            rl_model_sd['td_net.'+str(2*layer)+'.weight'] = meta_model_sd['td_net.'+str(2*layer)+'.weight'].clone()
-            rl_model_sd['td_net.'+str(2*layer)+'.bias']   = meta_model_sd['td_net.'+str(2*layer)+'.bias'].clone()    
-        self.policy.mlp_extractor.load_state_dict(rl_model_sd)
-        self.replace_tdnet = False          
-        
-    
+                                
     def train_RL_using_td(self, rollout_data:RolloutDopaBufferSamples):
         loss_meta = self.compute_metaloss_using_rollout(rollout_data)                
         loss_rl   = self.compute_rlloss_using_td(rollout_data)        
@@ -585,16 +677,6 @@ class Dopa(OnPolicyDopaAlgorithm):
             loss_meta = F.mse_loss(advantages, dopa)                  
         return loss_meta                    
                 
-    def save_train_data(self, time_step:int, loss_meta:th.Tensor, loss_rl:th.Tensor, rollout_data:RolloutDopaBufferSamples):                            
-        self.ftime.write(f"{time_step}\n")
-        self.floss_meta.write(f"{loss_meta.detach().item()}\n")
-        self.floss_rl.write(f"{loss_rl.detach().item()}\n")
-        self.fadva.write(f"{rollout_data.advantages.mean().detach().item()}\n")
-        self.fvalue.write(f"{rollout_data.old_values.mean().detach().item()}\n")
-        self.fnext_value.write(f"{rollout_data.next_values.mean().detach().item()}\n")
-        self.fdones.write(f"{rollout_data.next_dones.float().mean().detach().item()}\n")
-        self.freward.write(f"{rollout_data.rewards.mean().detach().item()}\n")                
-
     def save_all_train_data(self, time_step:int, loss_meta:th.Tensor, loss_rl:th.Tensor, rollout_data:RolloutDopaBufferSamples):                            
         self.ftime.write(f"{time_step}\n")
         self.floss_meta.write(f"{loss_meta.detach().item()}\n")

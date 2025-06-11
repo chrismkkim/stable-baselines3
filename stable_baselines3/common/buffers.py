@@ -549,6 +549,7 @@ class RolloutDopaBuffer(BaseBuffer):
     observations: np.ndarray
     actions: np.ndarray
     rewards: np.ndarray
+    raw_rewards: np.ndarray
     advantages: np.ndarray
     returns: np.ndarray
     episode_starts: np.ndarray
@@ -579,6 +580,7 @@ class RolloutDopaBuffer(BaseBuffer):
         self.observations = np.zeros((self.buffer_size, self.n_envs, *self.obs_shape), dtype=np.float32)
         self.actions = np.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32)
         self.rewards = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+        self.raw_rewards = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.returns = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.episode_starts = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
@@ -637,6 +639,7 @@ class RolloutDopaBuffer(BaseBuffer):
         obs: np.ndarray,
         action: np.ndarray,
         reward: np.ndarray,
+        raw_reward: np.ndarray,
         episode_start: np.ndarray,
         value: th.Tensor,
         log_prob: th.Tensor,
@@ -668,6 +671,7 @@ class RolloutDopaBuffer(BaseBuffer):
         self.observations[self.pos] = np.array(obs)
         self.actions[self.pos] = np.array(action)
         self.rewards[self.pos] = np.array(reward)
+        self.raw_rewards[self.pos] = np.array(raw_reward)
         self.episode_starts[self.pos] = np.array(episode_start)
         self.values[self.pos] = value.clone().cpu().numpy().flatten()
         self.log_probs[self.pos] = log_prob.clone().cpu().numpy()
@@ -704,6 +708,7 @@ class RolloutDopaBuffer(BaseBuffer):
                 "returns",
                 "returns_dopa",
                 "rewards",
+                "raw_rewards",
             ]
 
             for tensor in _tensor_names:
@@ -736,6 +741,7 @@ class RolloutDopaBuffer(BaseBuffer):
             self.returns[batch_inds].flatten(),
             self.returns_dopa[batch_inds].flatten(),
             self.rewards[batch_inds].flatten(),
+            self.raw_rewards[batch_inds].flatten(),
         )
         return RolloutDopaBufferSamples(*tuple(map(self.to_torch, data)))
 
