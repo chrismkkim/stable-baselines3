@@ -303,7 +303,9 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
                     _last_rewards_tensor = th.as_tensor(_last_rewards).view(-1,1)
                     _last_raw_rewards_tensor = th.as_tensor(_last_raw_rewards).view(-1,1)
                     # generate dopa
-                    dopa = self.policy.gen_td(_last_rewards_tensor, values, _last_values, _last_dones_tensor, _last_raw_rewards_tensor)
+                    rollout_data_as_tensor = [_last_raw_rewards_tensor, _last_rewards_tensor, values, _last_values, _last_dones_tensor]
+                    _rewards, _next_values, _values, _dones = self.policy.process_truncated_states(*rollout_data_as_tensor)
+                    dopa = self.policy.gen_td(_rewards, _next_values, _values, _dones)
 
             n_steps += 1
             
@@ -338,7 +340,10 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
             _last_dones_tensor   = th.as_tensor(self._last_episode_starts).view(-1,1)
             _last_rewards_tensor = th.as_tensor(_last_rewards).view(-1,1)
             _last_raw_rewards_tensor = th.as_tensor(_last_raw_rewards).view(-1,1)
-            _last_dopa = self.policy.gen_td(_last_rewards_tensor, values, _last_values, _last_dones_tensor, _last_raw_rewards_tensor)
+            
+            rollout_data_as_tensor = [_last_raw_rewards_tensor, _last_rewards_tensor, values, _last_values, _last_dones_tensor]
+            _rewards, _next_values, _values, _dones = self.policy.process_truncated_states(*rollout_data_as_tensor)           
+            _last_dopa = self.policy.gen_td(_rewards, _next_values, _values, _dones)
 
         """
         (6) add the last dopa to rollout data

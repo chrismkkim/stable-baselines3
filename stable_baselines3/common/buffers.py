@@ -693,7 +693,11 @@ class RolloutDopaBuffer(BaseBuffer):
 
     def get(self, batch_size: Optional[int] = None) -> Generator[RolloutDopaBufferSamples, None, None]:
         assert self.full, ""
-        indices = np.random.permutation(self.buffer_size * self.n_envs)        
+        # indices = np.random.permutation(self.buffer_size * self.n_envs)      
+        """
+        Do not shuffle the environments (modified by CK)
+        """  
+        indices = np.arange(self.buffer_size * self.n_envs)        
         # Prepare the data
         if not self.generator_ready:
             _tensor_names = [

@@ -1050,19 +1050,39 @@ class ActorCriticDopaPolicy(BasePolicy):
         actions = actions.reshape((-1, *self.action_space.shape))  # type: ignore[misc]
         return actions, values, log_prob
 
-    def gen_td(self, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor, raw_rewards: th.Tensor) -> th.Tensor:
-        # find truncated agents
-        trunc       = (rewards != raw_rewards).float()
-        # if truncated, d becomes 1- d
-        dones       = (1-trunc) * dones       + trunc * th.logical_not(dones)
-        # if truncated, v_terminal = (r - r_raw)/gamma because SB3 modified the reward to r = r_raw + gamma * v_terminal
-        next_values = (1-trunc) * next_values + trunc * (rewards - raw_rewards) / self.gamma
-        # always use the raw rewards, not the modified rewards as in truncated agents
-        rewards     = raw_rewards.clone()
+    def gen_td(self, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor) -> th.Tensor:        
         # input to neural network        
-        input_to_td = th.cat([rewards, next_values, values, dones], dim=1)
+        input_to_td = th.cat([rewards, next_values, values, th.tensor(1) - dones], dim=1)
         td = self.mlp_extractor.td_net(input_to_td)
         return td
+    
+    def process_truncated_states(self, raw_rewards: th.Tensor, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor):        
+        _trunc              = (rewards != raw_rewards).float()
+        if th.any(_trunc):
+            _rewards            = raw_rewards.clone()
+            _next_values        = (1-_trunc) * next_values + _trunc * (rewards - raw_rewards) / self.gamma
+            _values             = values.clone()
+            _dones              = (1-_trunc) * dones  + _trunc * th.logical_not(dones)
+        else:
+            _rewards            = raw_rewards.clone()
+            _next_values        = next_values
+            _values             = values.clone()
+            _dones              = dones.float()
+        return _rewards, _next_values, _values, _dones
+    
+    
+    def include_flipped_dones(self, advantages, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor):        
+        _advantages         = rewards + (th.tensor(1) - dones) * self.gamma * next_values - values
+        _advantages_flipped = rewards +                 dones  * self.gamma * next_values - values        
+        assert th.all(advantages == _advantages.flatten())                
+        # expand all inputs
+        advantages_expand  = th.cat([advantages,  _advantages_flipped.flatten()]).view(-1,1)
+        rewards_expand     = th.cat([rewards,     rewards])
+        next_values_expand = th.cat([next_values, next_values])
+        values_expand      = th.cat([values,      values])
+        dones_expand       = th.cat([dones,       (th.tensor(1) - dones)])
+        return advantages_expand, rewards_expand, next_values_expand, values_expand, dones_expand
+                                    
 
     def _run_vp(self, features: th.Tensor) -> tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
         if self.share_features_extractor:

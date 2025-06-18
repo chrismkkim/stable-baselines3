@@ -66,6 +66,19 @@ class MovingAverageTracker:
             
     def get_moving_averages(self):
         return self.moving_averages[~th.isnan(self.moving_averages)]
+
+class ResetRLnet:
+    def __init__(self, num_reset):
+        self.k = 0
+        self.num_reset = num_reset
+        
+    def time_for_reset(self, prg):
+        if prg > self.k / self.num_reset:
+            self.k += 1
+            return True
+        else:
+            return False
+                
     
 class Dopa(OnPolicyDopaAlgorithm):
     """
@@ -126,8 +139,11 @@ class Dopa(OnPolicyDopaAlgorithm):
         learning_rate_dopa: Union[float, Schedule] = 1e-5,
         net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None,
         normalize_values: bool = False,
-        n_steps: int = 1, #<---- used to be 5
+        n_steps: int = 1, # number of rollout time steps
         n_meta_steps: int = 1,
+        n_timesteps: float = 1.0, # number of simulation time steps
+        n_envs: int = 1,
+        n_rlnet_reset: int = 1, # number of resetting the RL net during meta training
         tracker_window_size: int = 200,
         gamma: float = 0.99,
         gae_lambda: float = 0.0, #<---- used to be 1.0
@@ -201,6 +217,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         if _init_setup_model:
             self._setup_model()
             
+        self.loss_previous =1e4
         # path way to log
         self.tensorboard_log = tensorboard_log
         self.log_path = log_path
@@ -209,33 +226,35 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.traintype_meta = traintype_meta
         # learning rates
         # self.policy.learning_rate_dopa = learning_rate_dopa
-        self.learning_rate             = learning_rate
+        self.learning_rate = learning_rate
         # normalize values
         self.normalize_values = normalize_values
         # for training
         self.train_meta = True
         self.replace_tdnet = True
-        self.n_record = 10
-        # self.ftime = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/time.txt","w")
-        # self.floss_meta = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/loss_meta.txt","w")
-        # self.floss_rl   = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/loss_rl.txt","w")
-        # self.fadva      = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/adva.txt","w")
-        # self.fvalue     = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/value.txt","w")
-        # self.fnext_value = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/next_value.txt","w")
-        # self.fdones      = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/dones.txt","w")
-        # self.freward    = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/reward.txt","w")
-        # self.ftime_switch = open("/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/traindata/time_switch.txt","w")
         # track training loss
         self.tracker_window_size = tracker_window_size
         self.tracker_metaLoss = MovingAverageTracker(window_size=tracker_window_size)
         self.tracker_rlLoss   = MovingAverageTracker(window_size=tracker_window_size)
+        self.reset_rlnet      = ResetRLnet(n_rlnet_reset)
+        # save training log
+        self.n_envs           = n_envs
+        self.n_timesteps      = n_timesteps
+        self.Nsteps           = int(self.n_timesteps/self.n_envs)
+        self._log_advantages  = np.zeros((self.Nsteps, self.n_envs))
+        self._log_dopa        = np.zeros((self.Nsteps, self.n_envs))
+        self._log_values      = np.zeros((self.Nsteps, self.n_envs))
+        self._log_next_values = np.zeros((self.Nsteps, self.n_envs))
+        self._log_rewards     = np.zeros((self.Nsteps, self.n_envs))
+        self._log_raw_rewards = np.zeros((self.Nsteps, self.n_envs))
+        self._log_dones       = np.zeros((self.Nsteps, self.n_envs))
         
     def _update_my_lr(self, optimizer: th.optim.Optimizer, optimizer_meta: th.optim.Optimizer, learning_rate: float, learning_rate_dopa: float):
         optimizer.param_groups[0]["lr"] = learning_rate
         # optimizer.param_groups[1]["lr"] = learning_rate_dopa
-        optimizer_meta.param_groups[0]["lr"] = learning_rate_dopa
+        optimizer_meta.param_groups[0]["lr"] = learning_rate_dopa                
 
-    def train(self,time_step:int, total_timesteps:int) -> None:
+    def train(self, time_step:int, total_timesteps:int) -> None:
         """
         Update policy using the currently gathered
         rollout buffer (one gradient step over whole data).
@@ -247,12 +266,12 @@ class Dopa(OnPolicyDopaAlgorithm):
         # frac = time_step / total_timesteps
         # lr_dopa_adaptive = 0.1*self.policy.learning_rate_dopa * frac + self.policy.learning_rate_dopa * (1-frac)
         # loss_meta_avg = self.tracker_metaLoss.update(loss_meta)    
-        # if time_step > self.tracker_window_size * self.env.num_envs:
+        # if time_step > self.tracker_window_size * self.n_envs:
         #     if self.tracker_metaLoss.below_threshold(threshold=-2):
         #         self._update_my_lr(optimizer=self.policy.optimizer, optimizer_meta=self.policy.optimizer_meta, learning_rate=self.learning_rate, learning_rate_dopa=1e-4)
         # self._update_learning_rate(self.policy.optimizer)
         
-        # progress = time_step / total_timesteps
+        progress = time_step / total_timesteps
         for rollout_data in self.rollout_buffer.get(batch_size=None):       
             
             if self.traintype_meta:
@@ -261,7 +280,12 @@ class Dopa(OnPolicyDopaAlgorithm):
                 # loss_meta, loss_rl = self.meta_dummy(time_step, total_timesteps)
                 # loss_meta, loss_rl = self.meta_rollout_rl_dopa(rollout_data)
                 loss_meta, loss_rl = self.meta_rollout_expanded_rl_dopa(rollout_data)
-                # _, _ = self.meta_rollout_rl_td(rollout_data)
+                # _, _ = self.meta_rollout_rl_td(rollout_data)                
+
+                # reset RL network parameters
+                if self.reset_rlnet.time_for_reset(prg=progress):
+                    self.rlnet_param_reset()           
+                    print('\nReset RL network: ', self.reset_rlnet.k)                         
             else:
                 if self.replace_tdnet:
                     self.load_meta_tdnet()
@@ -271,9 +295,18 @@ class Dopa(OnPolicyDopaAlgorithm):
             # th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
             
             # save training data
-            if time_step % (self.env.num_envs) == 0:
-                self.save_train_data(time_step, loss_meta, loss_rl, rollout_data)    
-                # self.save_all_train_data(time_step, loss_meta, loss_rl, rollout_data)                                                               
+            self.save_train_data(time_step, loss_meta, loss_rl, rollout_data)    
+            # self.save_all_train_data(time_step, loss_meta, loss_rl, rollout_data)                                                               
+
+    def rlnet_param_reset(self):
+        # reset parameters of value / policy networks
+        for module in self.policy.mlp_extractor.value_net.modules():
+            if hasattr(module, 'reset_parameters'):
+                module.reset_parameters()
+        for module in self.policy.mlp_extractor.policy_net.modules():
+            if hasattr(module, 'reset_parameters'):
+                module.reset_parameters()           
+        
 
     def meta_rollout_rl_dopa(self, rollout_data:RolloutDopaBufferSamples):
         """
@@ -324,19 +357,30 @@ class Dopa(OnPolicyDopaAlgorithm):
         # Convert to tensor
         raw_rewards_tensor = th.as_tensor(rollout_data.raw_rewards).view(-1,1)
         rewards_tensor     = th.as_tensor(rollout_data.rewards).view(-1,1)
-        values_tensor      = th.as_tensor(rollout_data.old_values).view(-1,1)
         next_values_tensor = th.as_tensor(rollout_data.next_values).view(-1,1)
-        next_dones_tensor  = th.as_tensor(rollout_data.next_dones).view(-1,1)                                    
+        values_tensor      = th.as_tensor(rollout_data.old_values).view(-1,1)
+        next_dones_tensor  = th.as_tensor(rollout_data.next_dones).view(-1,1)                                
+        rollout_data_as_tensor = [raw_rewards_tensor, rewards_tensor, next_values_tensor, values_tensor, next_dones_tensor]    
         if self.normalize_values:
             values_tensor_mean = values_tensor.mean()
             values_tensor      = values_tensor      - values_tensor_mean
             next_values_tensor = next_values_tensor - values_tensor_mean        
+            
+        _rewards, _next_values, _values, _dones = self.policy.process_truncated_states(*rollout_data_as_tensor)            
         # Evaluate dopa network
         #   * Use the saved rollout data as inputs.
         #   * The ordering is different from collect_rollouts() in OnPolicyDopaAlogrithm.
-        dopa = self.policy.gen_td(rewards_tensor, next_values_tensor, values_tensor, next_dones_tensor, raw_rewards_tensor)
+        dopa = self.policy.gen_td(_rewards, _next_values, _values, _dones)
         dopa = dopa.flatten()        
         loss_meta = F.mse_loss(advantages, dopa)           
+        
+        # if not self.traintype_meta:
+        #     loss_current = loss_meta.mean().clone()
+        #     diff = th.log10(loss_current) - th.log10(th.tensor(self.loss_previous))
+        #     self.loss_previous = loss_current.clone()
+        #     if diff > 1:
+        #         x=1
+                
         return loss_meta
     
 
@@ -345,49 +389,57 @@ class Dopa(OnPolicyDopaAlgorithm):
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)            
         # Convert to tensor
-        rewards_tensor     = th.as_tensor(rollout_data.rewards).view(-1,1)
         raw_rewards_tensor = th.as_tensor(rollout_data.raw_rewards).view(-1,1)
-        values_tensor      = th.as_tensor(rollout_data.old_values).view(-1,1)
+        rewards_tensor     = th.as_tensor(rollout_data.rewards).view(-1,1)
         next_values_tensor = th.as_tensor(rollout_data.next_values).view(-1,1)
+        values_tensor      = th.as_tensor(rollout_data.old_values).view(-1,1)
         next_dones_tensor  = th.as_tensor(rollout_data.next_dones).view(-1,1)                                    
+        rollout_data_as_tensor = [raw_rewards_tensor, rewards_tensor, next_values_tensor, values_tensor, next_dones_tensor]
         if self.normalize_values:
             values_tensor_mean = values_tensor.mean()
             values_tensor      = values_tensor      - values_tensor_mean
             next_values_tensor = next_values_tensor - values_tensor_mean        
+                        
         # compute advantages with flipped terminal states
         #   i.e., r + dv' - v, intead of the correct value, r + (1-d)v' - v
         # advtanges_checked = rewards_tensor + self.gamma * (th.tensor(1) - next_dones_tensor.float()) * next_values_tensor - values_tensor
         # advantages_flipped = rewards_tensor + self.gamma * next_dones_tensor.float() * next_values_tensor - values_tensor
         
-        _trunc       = (rewards_tensor != raw_rewards_tensor).float()
-        _values      = values_tensor.clone()
-        _dones       = (1-_trunc) * next_dones_tensor  + _trunc * th.logical_not(next_dones_tensor)
-        _next_values = (1-_trunc) * next_values_tensor + _trunc * (rewards_tensor - raw_rewards_tensor) / self.gamma
-        _rewards     = raw_rewards_tensor.clone()
-        _advantages         = _rewards + (th.tensor(1) - _dones) * self.gamma * _next_values - _values
-        _advantages_flipped = _rewards + _dones * self.gamma * _next_values                  - _values
-        
-        assert th.all(advantages == _advantages.flatten())
-        
-        # if not th.all(advantages == _advantages.flatten()):
-        #     x=1
-        # if not th.all(advantages_flipped == _advantages_flipped):
-        #     x=1
+        # _trunc              = (rewards_tensor != raw_rewards_tensor).float()
+        # if th.any(_trunc):
+        #     _rewards            = raw_rewards_tensor.clone()
+        #     _next_values        = (1-_trunc) * next_values_tensor + _trunc * (rewards_tensor - raw_rewards_tensor) / self.gamma
+        #     _values             = values_tensor.clone()
+        #     _dones              = (1-_trunc) * next_dones_tensor  + _trunc * th.logical_not(next_dones_tensor)
+        # else:
+        #     _rewards            = raw_rewards_tensor.clone()
+        #     _next_values        = next_values_tensor
+        #     _values             = values_tensor.clone()
+        #     _dones              = next_dones_tensor
             
-        # expand all inputs
-        rewards_expand     = th.cat([rewards_tensor, rewards_tensor])
-        raw_rewards_expand = th.cat([raw_rewards_tensor, raw_rewards_tensor])
-        values_expand      = th.cat([values_tensor, values_tensor])
-        next_values_expand = th.cat([next_values_tensor, next_values_tensor])
-        next_dones_expand  = th.cat([next_dones_tensor, th.logical_not(next_dones_tensor)])
-        advantages_expand  = th.cat([advantages, _advantages_flipped.flatten()])
+        _rewards, _next_values, _values, _dones = self.policy.process_truncated_states(*rollout_data_as_tensor)
+            
+        rollout_data_processed = [advantages, _rewards, _next_values, _values, _dones]
+        advantages_expand, rewards_expand, next_values_expand, values_expand, dones_expand = self.policy.include_flipped_dones(*rollout_data_processed)
+        
+        # _advantages         = _rewards + (th.tensor(1) - _dones) * self.gamma * _next_values - _values
+        # _advantages_flipped = _rewards +                  _dones * self.gamma * _next_values - _values        
+        # assert th.all(advantages == _advantages.flatten())        
+        # # expand all inputs
+        # rewards_expand     = th.cat([_rewards.flatten(),     _rewards.flatten()])
+        # values_expand      = th.cat([_values.flatten(),      _values.flatten()])
+        # next_values_expand = th.cat([_next_values.flatten(), _next_values.flatten()])
+        # next_dones_expand  = th.cat([_dones.flatten(),       (th.tensor(1) - _dones).flatten()])
+        # advantages_expand  = th.cat([advantages,             _advantages_flipped.flatten()])
                 
         # Evaluate dopa network
         #   * Use the saved rollout data as inputs.
         #   * The ordering is different from collect_rollouts() in OnPolicyDopaAlogrithm.
-        dopa = self.policy.gen_td(rewards_expand, next_values_expand, values_expand, next_dones_expand, raw_rewards_expand)
+        dopa = self.policy.gen_td(rewards_expand, next_values_expand, values_expand, dones_expand)
         dopa = dopa.flatten()        
+        advantages_expand = advantages_expand.flatten()
         loss_meta = F.mse_loss(advantages_expand, dopa)
+        
         return loss_meta
                     
     def compute_rlloss_using_dopa(self, rollout_data:RolloutDopaBufferSamples):    
@@ -446,15 +498,25 @@ class Dopa(OnPolicyDopaAlgorithm):
         with open(fdone_path, "a") as fdone:
             fdone.write(f"{rollout_data.next_dones.float().mean().detach().item()}\n")
             
-        # self.ftime.write(f"{time_step}\n")
-        # self.floss_meta.write(f"{loss_meta.detach().item()}\n")
-        # self.floss_rl.write(f"{loss_rl.detach().item()}\n")
-        # self.fadva.write(f"{rollout_data.advantages.mean().detach().item()}\n")
-        # self.fvalue.write(f"{rollout_data.old_values.mean().detach().item()}\n")
-        # self.fnext_value.write(f"{rollout_data.next_values.mean().detach().item()}\n")
-        # self.fdones.write(f"{rollout_data.next_dones.float().mean().detach().item()}\n")
-        # self.freward.write(f"{rollout_data.rewards.mean().detach().item()}\n")                
-        
+        if not self.traintype_meta:
+            _idx                        = int(time_step / self.n_envs) - 1
+            self._log_advantages[_idx]  = rollout_data.advantages
+            self._log_dopa[_idx]        = rollout_data.dopa
+            self._log_values[_idx]      = rollout_data.old_values
+            self._log_next_values[_idx] = rollout_data.next_values
+            self._log_rewards[_idx]     = rollout_data.rewards
+            self._log_raw_rewards[_idx] = rollout_data.raw_rewards
+            self._log_dones[_idx]       = rollout_data.next_dones
+            
+            if _idx == self.Nsteps-1:
+                np.save(self.log_path + 'rl_advantages.npy',  self._log_advantages)
+                np.save(self.log_path + 'rl_dopa.npy',        self._log_dopa)
+                np.save(self.log_path + 'rl_values.npy',      self._log_values)
+                np.save(self.log_path + 'rl_next_values.npy', self._log_next_values)
+                np.save(self.log_path + 'rl_rewards.npy',     self._log_rewards)
+                np.save(self.log_path + 'rl_raw_rewards.npy', self._log_raw_rewards)
+                np.save(self.log_path + 'rl_dones.npy',       self._log_dones)
+            
 
     def meta_rollout_rl_td(self, rollout_data:RolloutDopaBufferSamples):
         """
@@ -628,10 +690,10 @@ class Dopa(OnPolicyDopaAlgorithm):
         thresh_high = -2
         thresh_low  = -2
         if self.train_meta:                    
-            # if time_step % (self.env.num_envs * self.n_record) == 0:
+            # if time_step % (self.n_envs * self.n_record) == 0:
             #     print("Meta", th.log10(loss_meta_avg).item())
-            # if self.tracker_metaLoss.stayed_inbetween(thresh_low, thresh_high, patience) or (self.tracker_metaLoss.below_threshold(threshold=thresh_low) and (time_step > self.n_avg * self.env.num_envs * self.n_record)):
-            if self.tracker_metaLoss.below_threshold(threshold=thresh_low) and (time_step > self.tracker_window_size * self.env.num_envs):
+            # if self.tracker_metaLoss.stayed_inbetween(thresh_low, thresh_high, patience) or (self.tracker_metaLoss.below_threshold(threshold=thresh_low) and (time_step > self.n_avg * self.n_envs * self.n_record)):
+            if self.tracker_metaLoss.below_threshold(threshold=thresh_low) and (time_step > self.tracker_window_size * self.n_envs):
                 # print("------ switch to train RL ------")
                 self.train_meta = not self.train_meta
                 self.tracker_metaLoss.cnt_switch += 1

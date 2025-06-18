@@ -25,6 +25,8 @@ import os
 from stable_baselines3.common import results_plotter
 
 
+#    CartPole-v1 CartPole-v1 1
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run both Dopa and A2C (with their YAML defaults) on the same env."
@@ -81,8 +83,7 @@ def main():
             "--train-envs", f"meta:'{env_ids[0]}'", f"rl:'{env_ids[1]}'",
             "--eval-episodes", "100"
         ]
-
-
+        
         # Run train.py in the zoo root
         try:
             subprocess.run(cmd, cwd=zoo_root, check=True)

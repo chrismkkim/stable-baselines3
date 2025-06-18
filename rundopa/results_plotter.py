@@ -8,7 +8,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import os
 
-from stable_baselines3.common.monitor import load_results
+from stable_baselines3.common.monitor import load_results, collect_agents_df
 
 X_TIMESTEPS = "timesteps"
 X_EPISODES = "episodes"
@@ -128,6 +128,22 @@ def plot_results(
     xy_list = [ts2xy(data_frame, x_axis) for data_frame in data_frames]
     plot_curves(xy_list, x_axis, task_name, frac, figsize)
 
+def collect_agents(dirs: list[str]) -> pd.DataFrame:
+    
+    for folder in dirs:
+        if os.path.isdir(folder):
+            data_frames = collect_agents_df(folder)
+    
+    nagents = len(data_frames)
+    agents = []
+    for i in range(nagents):
+        nepisodes  = data_frames[i].l.values.shape[0]
+        agent      = np.zeros((2,nepisodes))
+        agent[0,:] = data_frames[i].r.values
+        agent[1,:] = data_frames[i].l.values
+        agents.append(agent)
+
+    return agents
 
 def collect_topk(
     dirs: list[str], nagents: int, topk : int, num_timesteps: Optional[int], x_axis: str, frac: str="all", halftime : float=4e5
@@ -175,7 +191,7 @@ def collect_topk(
     for j, i in enumerate(idx_k):
         yarr[j] = ycum[i][:minlen]
     
-    return yarr
+    return yarr, xy_list
 
 def pick_topk(nagents, ycum, topk):
     # pick top k performers

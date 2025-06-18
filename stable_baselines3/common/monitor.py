@@ -252,3 +252,21 @@ def load_results(path: str) -> pandas.DataFrame:
     data_frame.reset_index(inplace=True)
     data_frame["t"] -= min(header["t_start"] for header in headers)
     return data_frame
+
+
+def collect_agents_df(path: str) -> pandas.DataFrame:
+    monitor_files = get_monitor_files(path)
+    if len(monitor_files) == 0:
+        raise LoadMonitorResultsError(f"No monitor files of the form *{Monitor.EXT} found in {path}")
+    data_frames, headers = [], []
+    for file_name in monitor_files:
+        with open(file_name) as file_handler:
+            first_line = file_handler.readline()
+            assert first_line[0] == "#"
+            header = json.loads(first_line[1:])
+            data_frame = pandas.read_csv(file_handler, index_col=None)
+            headers.append(header)
+            data_frame["t"] += header["t_start"]
+        data_frames.append(data_frame)        
+    return data_frames    
+    
