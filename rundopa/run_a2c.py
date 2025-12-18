@@ -25,6 +25,8 @@ import os
 from stable_baselines3.common import results_plotter
 
 
+#    BipedalWalker-v3 10 0.0006 0.00015 0
+
 def main():
     parser = argparse.ArgumentParser(
         description="Run both Dopa and A2C (with their YAML defaults) on the same env."
@@ -35,52 +37,62 @@ def main():
         help="Gym environment ID (e.g. CartPole-v1, LunarLander-v3)."
     )
     parser.add_argument(
+        "nenv",
+        type=str,
+        help="nenv"
+    )
+    parser.add_argument(
+        "lr",
+        type=str,
+        help="learning rate"
+    )
+    parser.add_argument(
+        "entcoef",
+        type=str,
+        help="entropy coef"
+    )    
+    parser.add_argument(
         "sim_id",
         type=str,
         help="Sim id."
     )
     
     args = parser.parse_args()
-    env_id = args.env_id
-    # env_id_rl   = args.env_id_rl
+    env_id      = args.env_id
+    nenv        = args.nenv
+    lr          = args.lr
+    entcoef     = args.entcoef    
     sim_id      = args.sim_id
 
     # We assume train.py lives in the same folder as this script.
-    path = '/Users/kimchm/Documents/GitHub/rl-baselines3-zoo/'
+    path = '/home/kimchm/RL/rl-baselines3-zoo/'
     zoo_root = os.path.abspath(path)
 
     # List of algorithms to run in sequence:
-    algos   = ["a2c"]
-    yaml    = ["a2c.yml"]
+    algo    = 'a2c'
+    yaml    = [f"a2c_env{nenv}_lr{lr}_ent{entcoef}.yml"]
     env_ids = [env_id]
     
     # path to log 
-    path_to_log = '/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/trainedmodel/' + sim_id
-    # path_to_log = '/Users/kimchm/OneDrive - National Institutes of Health/NIH/research/RL/code/trainedmodel'
-    path_to_par = 'hyperparams/'
-    for i, algo in enumerate(algos):
+    path_to_log = '/data/kimchm/data/RL/a2c/tmp'
+    path_to_par = 'hyperparams/' + env_id + '/a2c/'
+    for i in range(len(yaml)):
         print("\n" + "=" * 60)
-        print(f"Starting training with algo = {algos[i]}, env = {env_ids[i]}")
+        print(f"Starting training with algo = {algo}, env = {env_ids[i]}")
         print("=" * 60 + "\n")
 
         cmd = [
             sys.executable,         # ensures same Python interpreter
             "train.py",
-            "--algo", algos[i],
+            "--algo", algo,
+            "--conf-file", path_to_par + yaml[i],
             "--env", env_ids[i],
             "--log-folder", path_to_log,
-            "--verbose", "0"
+            "--verbose", "0",
+            "--eval-episodes", "100",
+            "--eval-num", "20"
         ]
-
-        # cmd = [
-        #     sys.executable,         # ensures same Python interpreter
-        #     "train.py",
-        #     "--algo", algos[i],
-        #     "--env", env_ids[i],
-        #     "--gym-env", "CartPole-v1",
-        #     "--log-folder", path_to_log
-        # ]
-
+        
         # Run train.py in the zoo root
         try:
             subprocess.run(cmd, cwd=zoo_root, check=True)
@@ -88,8 +100,7 @@ def main():
             print(f"\nERROR: `train.py --algo {algo} --env {env_ids[i]}` exited with code {e.returncode}\n")
             sys.exit(e.returncode)
 
-    print("\nAll done: both Dopa and A2C have finished training on:", env_ids[i])
-    
+    # print("\nAll done: both Dopa and A2C have finished training on:", env_ids[i])  
 
 if __name__ == "__main__":
     main()

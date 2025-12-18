@@ -25,7 +25,7 @@ import os
 from stable_baselines3.common import results_plotter
 
 
-#    BipedalWalker-v3 BipedalWalker-v3 10 16 0
+#    CartPole-v1 CartPole-v1 1
 
 def main():
     parser = argparse.ArgumentParser(
@@ -70,18 +70,14 @@ def main():
 
     # List of algorithms to run in sequence:
     algo    = 'dopa'
-    # yaml    = [f"swarm_meta_envs{sim_id_env}_units{sim_id_unit}.yml", f"swarm_rl_envs{sim_id_env}_units{sim_id_unit}.yml"]
-    yaml    = [f"tmp_swarm_meta.yml", f"tmp_swarm_rl.yml"]
+    yaml    = [f"swarm_meta_envs{sim_id_env}_units{sim_id_unit}.yml", f"swarm_rl_envs{sim_id_env}_units{sim_id_unit}.yml"]
     env_ids = [env_id_meta, env_id_rl]
     
     # path to log 
     path        = '/data/kimchm/data/RL/'
     path_envs   = env_id_meta + '_' + env_id_rl + '/'
-    #--- proper directory ---#
-    # path_to_log = path + path_envs + 'env_' + sim_id_env + '_unit_' + sim_id_unit + '/' + sim_id 
-    #--- temporary directory ---#
-    path_to_log = path + path_envs + 'tmp' 
-    path_to_par = 'hyperparams/' + env_id_rl + '/tdnet/'
+    path_to_log = path + path_envs + 'env_' + sim_id_env + '_unit_' + sim_id_unit + '/' + sim_id
+    path_to_par = 'hyperparams/lunar/tdnet/'
     for i in range(len(yaml)):
         print("\n" + "=" * 60)
         print(f"Starting training with algo = {algo}, env = {env_ids[i]}")
@@ -97,8 +93,7 @@ def main():
             "--tensorboard-log", path_to_log,
             "--verbose", "0",
             "--train-envs", f"meta:'{env_ids[0]}'", f"rl:'{env_ids[1]}'",
-            "--eval-episodes", "100",
-            "--eval-num", "20"
+            "--eval-episodes", "100"
         ]
         
         # Run train.py in the zoo root

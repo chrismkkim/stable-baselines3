@@ -452,7 +452,7 @@ class ActorCriticPolicy(BasePolicy):
         action_space: spaces.Space,
         lr_schedule: Schedule,
         net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None,
-        activation_fn: type[nn.Module] = nn.Tanh,
+        activation_fn: type[nn.Module] = nn.ReLU,
         ortho_init: bool = True,
         use_sde: bool = False,
         log_std_init: float = 0.0,
@@ -1073,14 +1073,21 @@ class ActorCriticDopaPolicy(BasePolicy):
     
     def include_flipped_dones(self, advantages, rewards: th.Tensor, next_values: th.Tensor, values: th.Tensor, dones: th.Tensor):        
         _advantages         = rewards + (th.tensor(1) - dones) * self.gamma * next_values - values
-        _advantages_flipped = rewards +                 dones  * self.gamma * next_values - values        
-        assert th.all(advantages == _advantages.flatten())                
+        _advantages_flipped = rewards +          th.tensor(0)  * self.gamma * next_values - values  #<-- Set the next_values to be 0 for all states, including the terminated states
+        # _advantages_flipped = rewards +                 dones  * self.gamma * next_values - values <-- This flips the advantage at the terminated state. Not what we want
+        '''
+        Two quantities can be off by a small number < 1e-4. Seems to be a round off error.
+        Alternative is use isclose, but commented out here
+            assert th.all(th.isclose(advantages, _advantages.flatten(), rtol=0, atol=1e-4)) 
+        '''
+        # assert th.all(advantages == _advantages.flatten())                
         # expand all inputs
         advantages_expand  = th.cat([advantages,  _advantages_flipped.flatten()]).view(-1,1)
         rewards_expand     = th.cat([rewards,     rewards])
         next_values_expand = th.cat([next_values, next_values])
         values_expand      = th.cat([values,      values])
-        dones_expand       = th.cat([dones,       (th.tensor(1) - dones)])
+        dones_expand       = th.cat([dones,       th.ones_like(dones)])
+        # dones_expand       = th.cat([dones,       (th.tensor(1) - dones)]) <-- This corresponds to the fliped done for the previous advantages_flipped
         return advantages_expand, rewards_expand, next_values_expand, values_expand, dones_expand
                                     
 

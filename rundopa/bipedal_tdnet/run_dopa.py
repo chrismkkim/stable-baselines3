@@ -70,17 +70,14 @@ def main():
 
     # List of algorithms to run in sequence:
     algo    = 'dopa'
-    # yaml    = [f"swarm_meta_envs{sim_id_env}_units{sim_id_unit}.yml", f"swarm_rl_envs{sim_id_env}_units{sim_id_unit}.yml"]
-    yaml    = [f"tmp_swarm_meta.yml", f"tmp_swarm_rl.yml"]
+    yaml    = [f"swarm_meta_envs{sim_id_env}_units{sim_id_unit}.yml", f"swarm_rl_envs{sim_id_env}_units{sim_id_unit}.yml"]
+    # yaml    = [f"swarm_meta_envs{sim_id_env}_units{sim_id_unit}_tmp.yml", f"swarm_rl_envs{sim_id_env}_units{sim_id_unit}_tmp.yml"]
     env_ids = [env_id_meta, env_id_rl]
     
     # path to log 
     path        = '/data/kimchm/data/RL/'
     path_envs   = env_id_meta + '_' + env_id_rl + '/'
-    #--- proper directory ---#
-    # path_to_log = path + path_envs + 'env_' + sim_id_env + '_unit_' + sim_id_unit + '/' + sim_id 
-    #--- temporary directory ---#
-    path_to_log = path + path_envs + 'tmp' 
+    path_to_log = path + path_envs + 'env_' + sim_id_env + '_unit_' + sim_id_unit + '/' + sim_id
     path_to_par = 'hyperparams/' + env_id_rl + '/tdnet/'
     for i in range(len(yaml)):
         print("\n" + "=" * 60)
@@ -109,6 +106,23 @@ def main():
             sys.exit(e.returncode)
 
     print("\nAll done: both Dopa and A2C have finished training on:", env_ids[i])  
+
+    print("\nDelete trained models")
+    path_to_savedmodel_1 = path_to_log + '/dopa/' + env_id_rl + '_1/'
+    path_to_savedmodel_2 = path_to_log + '/dopa/' + env_id_rl + '_2/'    
+    path_to_bestmodel_1  = path_to_savedmodel_1 + 'best_model.zip'
+    path_to_bestmodel_2  = path_to_savedmodel_2 + 'best_model.zip'
+    path_to_envidmodel_1 = path_to_savedmodel_1 + env_id_rl + '.zip'
+    path_to_envidmodel_2 = path_to_savedmodel_2 + env_id_rl + '.zip'
+    if os.path.isfile(path_to_bestmodel_1):
+        os.remove(path_to_bestmodel_1)
+    if os.path.isfile(path_to_bestmodel_2):
+        os.remove(path_to_bestmodel_2)
+    if os.path.isfile(path_to_envidmodel_1):
+        os.remove(path_to_envidmodel_1)
+    if os.path.isfile(path_to_envidmodel_2):
+        os.remove(path_to_envidmodel_2)
+
 
 if __name__ == "__main__":
     main()

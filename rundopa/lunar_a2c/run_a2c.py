@@ -25,32 +25,32 @@ import os
 from stable_baselines3.common import results_plotter
 
 
-#    BipedalWalker-v3 BipedalWalker-v3 10 16 0
+#    CartPole-v1 CartPole-v1 1
 
 def main():
     parser = argparse.ArgumentParser(
         description="Run both Dopa and A2C (with their YAML defaults) on the same env."
     )
     parser.add_argument(
-        "env_id_meta",
+        "env_id",
         type=str,
         help="Gym environment ID (e.g. CartPole-v1, LunarLander-v3)."
     )
     parser.add_argument(
-        "env_id_rl",
+        "nenv",
         type=str,
-        help="Gym environment ID (e.g. CartPole-v1, LunarLander-v3)."
+        help="nenv"
+    )
+    parser.add_argument(
+        "lr",
+        type=str,
+        help="learning rate"
+    )
+    parser.add_argument(
+        "entcoef",
+        type=str,
+        help="entropy coef"
     )    
-    parser.add_argument(
-        "sim_id_nenvs",
-        type=str,
-        help="Sim id."
-    )
-    parser.add_argument(
-        "sim_id_nunits",
-        type=str,
-        help="Sim id."
-    )
     parser.add_argument(
         "sim_id",
         type=str,
@@ -58,10 +58,10 @@ def main():
     )
     
     args = parser.parse_args()
-    env_id_meta = args.env_id_meta
-    env_id_rl   = args.env_id_rl
-    sim_id_env  = args.sim_id_nenvs
-    sim_id_unit = args.sim_id_nunits
+    env_id      = args.env_id
+    nenv        = args.nenv
+    lr          = args.lr
+    entcoef     = args.entcoef    
     sim_id      = args.sim_id
 
     # We assume train.py lives in the same folder as this script.
@@ -69,19 +69,13 @@ def main():
     zoo_root = os.path.abspath(path)
 
     # List of algorithms to run in sequence:
-    algo    = 'dopa'
-    # yaml    = [f"swarm_meta_envs{sim_id_env}_units{sim_id_unit}.yml", f"swarm_rl_envs{sim_id_env}_units{sim_id_unit}.yml"]
-    yaml    = [f"tmp_swarm_meta.yml", f"tmp_swarm_rl.yml"]
-    env_ids = [env_id_meta, env_id_rl]
+    algo    = 'a2c'
+    yaml    = [f"a2c_env{nenv}_lr{lr}_ent{entcoef}.yml"]
+    env_ids = [env_id]
     
     # path to log 
-    path        = '/data/kimchm/data/RL/'
-    path_envs   = env_id_meta + '_' + env_id_rl + '/'
-    #--- proper directory ---#
-    # path_to_log = path + path_envs + 'env_' + sim_id_env + '_unit_' + sim_id_unit + '/' + sim_id 
-    #--- temporary directory ---#
-    path_to_log = path + path_envs + 'tmp' 
-    path_to_par = 'hyperparams/' + env_id_rl + '/tdnet/'
+    path_to_log = '/data/kimchm/data/RL/a2c/' + env_id + '/' + 'env_' + nenv + '_lr_' + lr + '_ent_' + entcoef + '/' + sim_id
+    path_to_par = 'hyperparams/' + env_id + '/a2c/'
     for i in range(len(yaml)):
         print("\n" + "=" * 60)
         print(f"Starting training with algo = {algo}, env = {env_ids[i]}")
@@ -94,9 +88,7 @@ def main():
             "--conf-file", path_to_par + yaml[i],
             "--env", env_ids[i],
             "--log-folder", path_to_log,
-            "--tensorboard-log", path_to_log,
             "--verbose", "0",
-            "--train-envs", f"meta:'{env_ids[0]}'", f"rl:'{env_ids[1]}'",
             "--eval-episodes", "100",
             "--eval-num", "20"
         ]
@@ -108,7 +100,7 @@ def main():
             print(f"\nERROR: `train.py --algo {algo} --env {env_ids[i]}` exited with code {e.returncode}\n")
             sys.exit(e.returncode)
 
-    print("\nAll done: both Dopa and A2C have finished training on:", env_ids[i])  
+    # print("\nAll done: both Dopa and A2C have finished training on:", env_ids[i])  
 
 if __name__ == "__main__":
     main()

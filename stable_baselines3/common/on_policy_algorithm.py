@@ -407,7 +407,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
             
             iteration += 1
             self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
-            print(f'\rprogress: {np.round(self._current_progress_remaining, decimals=2)}', end='')
+            # print(f'\rprogress: {np.round(self._current_progress_remaining, decimals=2)}', end='')
             
             # Display training infos
             if log_interval is not None and iteration % log_interval == 0:
