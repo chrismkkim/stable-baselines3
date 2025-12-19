@@ -238,16 +238,19 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.tracker_rlLoss   = MovingAverageTracker(window_size=tracker_window_size)
         self.reset_rlnet      = ResetRLnet(n_rlnet_reset)
         # save training log
-        self.n_envs           = n_envs
-        self.n_timesteps      = n_timesteps
-        self.Nsteps           = int(self.n_timesteps/self.n_envs)
-        self._log_advantages  = np.zeros((self.Nsteps, self.n_envs))
-        self._log_dopa        = np.zeros((self.Nsteps, self.n_envs))
-        self._log_values      = np.zeros((self.Nsteps, self.n_envs))
-        self._log_next_values = np.zeros((self.Nsteps, self.n_envs))
-        self._log_rewards     = np.zeros((self.Nsteps, self.n_envs))
-        self._log_raw_rewards = np.zeros((self.Nsteps, self.n_envs))
-        self._log_dones       = np.zeros((self.Nsteps, self.n_envs))
+        self.n_envs               = n_envs
+        self.n_timesteps          = n_timesteps
+        self.Nsteps               = int(self.n_timesteps/self.n_envs)
+        self._log_metaerr_nonterm = np.zeros((self.Nsteps, self.n_envs))
+        self._log_metaerr_term    = np.zeros((self.Nsteps, self.n_envs))
+        self._log_meta_values     = np.zeros((self.Nsteps, self.n_envs))
+        self._log_advantages      = np.zeros((self.Nsteps, self.n_envs))
+        self._log_dopa            = np.zeros((self.Nsteps, self.n_envs))
+        self._log_values          = np.zeros((self.Nsteps, self.n_envs))
+        self._log_next_values     = np.zeros((self.Nsteps, self.n_envs))
+        self._log_rewards         = np.zeros((self.Nsteps, self.n_envs))
+        self._log_raw_rewards     = np.zeros((self.Nsteps, self.n_envs))
+        self._log_dones           = np.zeros((self.Nsteps, self.n_envs))
         
     def _update_my_lr(self, optimizer: th.optim.Optimizer, optimizer_meta: th.optim.Optimizer, learning_rate: float, learning_rate_dopa: float):
         optimizer.param_groups[0]["lr"] = learning_rate
@@ -297,6 +300,20 @@ class Dopa(OnPolicyDopaAlgorithm):
             # save training data
             self.save_train_data(time_step, loss_meta, loss_rl, rollout_data)    
             # self.save_all_train_data(time_step, loss_meta, loss_rl, rollout_data)                                                               
+
+
+    def sim(self, time_step:int, total_timesteps:int) -> None:
+        """
+        Simulate trained model and save rollout data. No training.
+        """
+        # Switch to train mode (this affects batch norm / dropout)
+        # self.policy.set_training_mode(True)
+
+        # progress = time_step / total_timesteps
+        for rollout_data in self.rollout_buffer.get(batch_size=None):                                               
+            # save simulation data
+            self.save_sim_data(time_step, rollout_data)    
+
 
     def rlnet_param_reset(self):
         # reset parameters of value / policy networks
@@ -373,14 +390,7 @@ class Dopa(OnPolicyDopaAlgorithm):
         dopa = self.policy.gen_td(_rewards, _next_values, _values, _dones)
         dopa = dopa.flatten()        
         loss_meta = F.mse_loss(advantages, dopa)           
-        
-        # if not self.traintype_meta:
-        #     loss_current = loss_meta.mean().clone()
-        #     diff = th.log10(loss_current) - th.log10(th.tensor(self.loss_previous))
-        #     self.loss_previous = loss_current.clone()
-        #     if diff > 1:
-        #         x=1
-                
+                        
         return loss_meta
     
 
@@ -400,38 +410,15 @@ class Dopa(OnPolicyDopaAlgorithm):
             values_tensor      = values_tensor      - values_tensor_mean
             next_values_tensor = next_values_tensor - values_tensor_mean        
                         
+        _rewards, _next_values, _values, _dones = self.policy.process_truncated_states(*rollout_data_as_tensor)
+            
         # compute advantages with flipped terminal states
         #   i.e., r + dv' - v, intead of the correct value, r + (1-d)v' - v
         # advtanges_checked = rewards_tensor + self.gamma * (th.tensor(1) - next_dones_tensor.float()) * next_values_tensor - values_tensor
-        # advantages_flipped = rewards_tensor + self.gamma * next_dones_tensor.float() * next_values_tensor - values_tensor
-        
-        # _trunc              = (rewards_tensor != raw_rewards_tensor).float()
-        # if th.any(_trunc):
-        #     _rewards            = raw_rewards_tensor.clone()
-        #     _next_values        = (1-_trunc) * next_values_tensor + _trunc * (rewards_tensor - raw_rewards_tensor) / self.gamma
-        #     _values             = values_tensor.clone()
-        #     _dones              = (1-_trunc) * next_dones_tensor  + _trunc * th.logical_not(next_dones_tensor)
-        # else:
-        #     _rewards            = raw_rewards_tensor.clone()
-        #     _next_values        = next_values_tensor
-        #     _values             = values_tensor.clone()
-        #     _dones              = next_dones_tensor
-            
-        _rewards, _next_values, _values, _dones = self.policy.process_truncated_states(*rollout_data_as_tensor)
-            
+        # advantages_flipped = rewards_tensor + self.gamma * next_dones_tensor.float() * next_values_tensor - values_tensor                    
         rollout_data_processed = [advantages, _rewards, _next_values, _values, _dones]
         advantages_expand, rewards_expand, next_values_expand, values_expand, dones_expand = self.policy.include_flipped_dones(*rollout_data_processed)
         
-        # _advantages         = _rewards + (th.tensor(1) - _dones) * self.gamma * _next_values - _values
-        # _advantages_flipped = _rewards +                  _dones * self.gamma * _next_values - _values        
-        # assert th.all(advantages == _advantages.flatten())        
-        # # expand all inputs
-        # rewards_expand     = th.cat([_rewards.flatten(),     _rewards.flatten()])
-        # values_expand      = th.cat([_values.flatten(),      _values.flatten()])
-        # next_values_expand = th.cat([_next_values.flatten(), _next_values.flatten()])
-        # next_dones_expand  = th.cat([_dones.flatten(),       (th.tensor(1) - _dones).flatten()])
-        # advantages_expand  = th.cat([advantages,             _advantages_flipped.flatten()])
-                
         # Evaluate dopa network
         #   * Use the saved rollout data as inputs.
         #   * The ordering is different from collect_rollouts() in OnPolicyDopaAlogrithm.
@@ -468,7 +455,8 @@ class Dopa(OnPolicyDopaAlgorithm):
         # load the trained meta model
         meta_env_id       = self.train_envs['meta']
         meta_log          = '1'
-        path_to_metamodel = self.log_path + meta_env_id + '_' + meta_log + '/' + 'best_model.zip'
+        path_to_metamodel = self.log_path + meta_env_id + '_' + meta_log + '/' + meta_env_id + '.zip'
+        # path_to_metamodel = self.log_path + meta_env_id + '_' + meta_log + '/' + 'best_model.zip'
         meta_model        = self.load(path_to_metamodel)
         
         # use the td net from the trained meta model
@@ -478,25 +466,19 @@ class Dopa(OnPolicyDopaAlgorithm):
             rl_model_sd['td_net.'+str(2*layer)+'.weight'] = meta_model_sd['td_net.'+str(2*layer)+'.weight'].clone()
             rl_model_sd['td_net.'+str(2*layer)+'.bias']   = meta_model_sd['td_net.'+str(2*layer)+'.bias'].clone()    
         self.policy.mlp_extractor.load_state_dict(rl_model_sd)
-        self.replace_tdnet = False          
-        
+        self.replace_tdnet = False                  
 
     def save_train_data(self, time_step:int, loss_meta:th.Tensor, loss_rl:th.Tensor, rollout_data:RolloutDopaBufferSamples):                            
 
         if self.traintype_meta:
-            ftime_path = self.log_path + 'meta_time.txt'
-            floss_path = self.log_path + 'meta_lossmeta.txt'
-            fdone_path = self.log_path + 'meta_done.txt'
-        else:
-            ftime_path = self.log_path + 'rl_time.txt'
-            floss_path = self.log_path + 'rl_lossmeta.txt'
-            fdone_path = self.log_path + 'rl_done.txt'
-        with open(ftime_path, "a") as ftime:
-            ftime.write(f"{time_step}\n")
-        with open(floss_path, "a") as floss:
-            floss.write(f"{loss_meta.detach().item()}\n")
-        with open(fdone_path, "a") as fdone:
-            fdone.write(f"{rollout_data.next_dones.float().mean().detach().item()}\n")
+            _idx                             = int(time_step / self.n_envs) - 1
+            self._log_metaerr_nonterm[_idx]  = (1-rollout_data.next_dones.float()) * (rollout_data.dopa - rollout_data.advantages) / rollout_data.old_values
+            self._log_metaerr_term[_idx]     =     rollout_data.next_dones.float() * (rollout_data.dopa - rollout_data.advantages) / rollout_data.old_values
+            self._log_meta_values[_idx]      = rollout_data.old_values
+            if _idx == self.Nsteps-1:
+                np.save(self.log_path + 'meta_err_nonterm.npy',  self._log_metaerr_nonterm)
+                np.save(self.log_path + 'meta_err_term.npy',     self._log_metaerr_term)
+                np.save(self.log_path + 'meta_values.npy',       self._log_meta_values)
             
         if not self.traintype_meta:
             _idx                        = int(time_step / self.n_envs) - 1
@@ -506,8 +488,7 @@ class Dopa(OnPolicyDopaAlgorithm):
             self._log_next_values[_idx] = rollout_data.next_values
             self._log_rewards[_idx]     = rollout_data.rewards
             self._log_raw_rewards[_idx] = rollout_data.raw_rewards
-            self._log_dones[_idx]       = rollout_data.next_dones
-            
+            self._log_dones[_idx]       = rollout_data.next_dones            
             if _idx == self.Nsteps-1:
                 np.save(self.log_path + 'rl_advantages.npy',  self._log_advantages)
                 np.save(self.log_path + 'rl_dopa.npy',        self._log_dopa)
@@ -517,6 +498,23 @@ class Dopa(OnPolicyDopaAlgorithm):
                 np.save(self.log_path + 'rl_raw_rewards.npy', self._log_raw_rewards)
                 np.save(self.log_path + 'rl_dones.npy',       self._log_dones)
             
+    def save_sim_data(self, time_step:int, rollout_data:RolloutDopaBufferSamples):                            
+        _idx                        = int(time_step / self.n_envs) - 1
+        self._log_advantages[_idx]  = rollout_data.advantages
+        self._log_dopa[_idx]        = rollout_data.dopa
+        self._log_values[_idx]      = rollout_data.old_values
+        self._log_next_values[_idx] = rollout_data.next_values
+        self._log_rewards[_idx]     = rollout_data.rewards
+        self._log_raw_rewards[_idx] = rollout_data.raw_rewards
+        self._log_dones[_idx]       = rollout_data.next_dones            
+        if _idx == self.Nsteps-1:
+            np.save(self.log_path + 'sim_advantages.npy',  self._log_advantages)
+            np.save(self.log_path + 'sim_dopa.npy',        self._log_dopa)
+            np.save(self.log_path + 'sim_values.npy',      self._log_values)
+            np.save(self.log_path + 'sim_next_values.npy', self._log_next_values)
+            np.save(self.log_path + 'sim_rewards.npy',     self._log_rewards)
+            np.save(self.log_path + 'sim_raw_rewards.npy', self._log_raw_rewards)
+            np.save(self.log_path + 'sim_dones.npy',       self._log_dones)
 
     def meta_rollout_rl_td(self, rollout_data:RolloutDopaBufferSamples):
         """
@@ -762,6 +760,25 @@ class Dopa(OnPolicyDopaAlgorithm):
         progress_bar: bool = False,
     ) -> SelfDopa:
         return super().learn(
+            total_timesteps=total_timesteps,
+            callback=callback,
+            log_interval=log_interval,
+            tb_log_name=tb_log_name,
+            reset_num_timesteps=reset_num_timesteps,
+            progress_bar=progress_bar,
+        )
+
+
+    def simulate(
+        self: SelfDopa,
+        total_timesteps: int,
+        callback: MaybeCallback = None,
+        log_interval: int = 100,
+        tb_log_name: str = "Dopa",
+        reset_num_timesteps: bool = True,
+        progress_bar: bool = False,
+    ) -> SelfDopa:
+        return super().simulate(
             total_timesteps=total_timesteps,
             callback=callback,
             log_interval=log_interval,

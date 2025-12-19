@@ -1,0 +1,10 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../rl-baselines3-zoo"
+		}
+	]
+}

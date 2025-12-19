@@ -327,7 +327,7 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
             _last_rewards = rewards
             _last_raw_rewards = raw_rewards
             _last_values  = values
-        #---------- End of rollout ----------
+            #---------- End of rollout ----------
         
         """
         (5) generate the last values and the last dopa
@@ -364,6 +364,13 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
     def train(self) -> None:
         """
         Consume current rollout data and update policy parameters.
+        Implemented by individual algorithms.
+        """
+        raise NotImplementedError
+
+    def sim(self) -> None:
+        """
+        Consume current rollout data. Do Not update policy parameters.
         Implemented by individual algorithms.
         """
         raise NotImplementedError
@@ -426,96 +433,107 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
 
         return self
 
+
+    def simulate(
+        self: SelfOnPolicyDopaAlgorithm,
+        total_timesteps: int,
+        callback: MaybeCallback = None,
+        log_interval: int = 1,
+        tb_log_name: str = "OnPolicyAlgorithm",
+        reset_num_timesteps: bool = True,
+        progress_bar: bool = False,
+    ) -> SelfOnPolicyDopaAlgorithm:
+        iteration = 0
+
+        total_timesteps, callback = self._setup_learn(
+            total_timesteps,
+            callback,
+            reset_num_timesteps,
+            tb_log_name,
+            progress_bar,
+        )
+
+        # callback.on_training_start(locals(), globals())
+        
+        assert self.env is not None          
+
+        self.policy.da_net_names = ["reward", "v2d", "nextv2d", "r2d", "d2d", "dopa", "td"]        
+        
+        while self.num_timesteps < total_timesteps:
+            
+            continue_training = self.collect_sim_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
+    
+            if not continue_training:
+                break                
+            
+            iteration += 1
+            self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
+            print(f'\rprogress: {np.round(self._current_progress_remaining, decimals=2)}', end='')
+                        
+            self.sim(self.num_timesteps, total_timesteps)            
+
+        # callback.on_training_end()
+        
+        return self
+    
     def _get_torch_save_params(self) -> tuple[list[str], list[str]]:
         state_dicts = ["policy", "policy.optimizer"]
 
         return state_dicts, []
 
 
-    def collect_meta_rollouts(
+    def collect_sim_rollouts(
         self,
         env: VecEnv,
         callback: BaseCallback,
-        meta_rollout_buffer: MetaRolloutBuffer,
-        n_meta_rollout_steps: int,
-        rollout_last_obs: np.ndarray
+        rollout_buffer: RolloutDopaBuffer,
+        n_rollout_steps: int,
     ) -> bool:
         """
-        Collect experiences using the current policy and fill a ``RolloutBuffer``.
+        Collect experiences using the current policy and fill a ``RolloutDopaBuffer``.
         The term rollout here refers to the model-free notion and should not
         be used with the concept of rollout used in model-based RL or planning.
 
         :param env: The training environment
         :param callback: Callback that will be called at each step
             (and at the beginning and end of the rollout)
-        :param meta_rollout_buffer: Buffer to fill with rollouts
-        :param n_meta_rollout_steps: Number of experiences to collect per environment
-        :return: True if function returned with at least `n_meta_rollout_steps`
+        :param rollout_buffer: Buffer to fill with rollouts
+        :param n_rollout_steps: Number of experiences to collect per environment
+        :return: True if function returned with at least `n_rollout_steps`
             collected, False if callback terminated rollout prematurely.
         """
-
-        """
-        use last_obs from RL-rollout as the initial state
-        """
-        # assert rollout_last_obs.shape[0] == 1, "Error: Rolled out more than 1 step"
-        self._meta_last_obs = np.squeeze(rollout_last_obs)
+        assert self._last_obs is not None, "No previous observation was provided"
         # Switch to eval mode (this affects batch norm / dropout)
-        self.policy.set_training_mode(False)
+        # self.policy.set_training_mode(False)
 
         n_steps = 0
-        meta_rollout_buffer.reset()
-        # Sample new weights for the state dependent exploration
-        if self.use_sde:
-            self.policy.reset_noise(env.num_envs)
+        rollout_buffer.reset()
+        # callback.on_rollout_start()
 
-        callback.on_rollout_start()
-
-        while n_steps < n_meta_rollout_steps:
-            if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
-                # Sample a new noise matrix
-                self.policy.reset_noise(env.num_envs)
+        while n_steps < n_rollout_steps:
 
             with th.no_grad():
-                """
-                use last_obs from the RL-rollout, intead of self._last_obs
-                """
                 # Convert to pytorch tensor or to TensorDict
-                obs_tensor = obs_as_tensor(self._meta_last_obs, self.device)
-                actions, values, log_probs = self.policy(obs_tensor)
+                obs_tensor, _ = self.policy.obs_to_tensor(self._last_obs)
+                # actions = self.policy._predict(obs_tensor, deterministic=True)
+                # values = self.policy.predict_values(obs_tensor)
+                '''
+                For LunarLander, deterministic must be True. Otherwise, performance will be bad.
+                '''
+                actions, values, log_probs = self.policy(obs_tensor, deterministic=True)
             actions = actions.cpu().numpy()
+            new_obs, rewards, dones, infos = env.step(actions)
 
-            # Rescale and perform action
-            clipped_actions = actions
+            raw_rewards = np.copy(rewards) 
+            
+            self.num_timesteps += env.num_envs
 
-            if isinstance(self.action_space, spaces.Box):
-                if self.policy.squash_output:
-                    # Unscale the actions to match env bounds
-                    # if they were previously squashed (scaled in [-1, 1])
-                    clipped_actions = self.policy.unscale_action(clipped_actions)
-                else:
-                    # Otherwise, clip the actions to avoid out of bound error
-                    # as we are sampling from an unbounded Gaussian distribution
-                    clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
+            # # Give access to local variables
+            # callback.update_locals(locals())
+            # if not callback.on_step():
+            #     return False
 
-            new_obs, rewards, dones, infos = env.step(clipped_actions)
-
-            """
-            meta-rollouts should not count towards the actual rollout steps
-            """
-            # self.num_timesteps += env.num_envs
-
-            # Give access to local variables
-            callback.update_locals(locals())
-            if not callback.on_step():
-                return False
-
-            self._update_info_buffer(infos, dones)
-            n_steps += 1
-
-            if isinstance(self.action_space, spaces.Discrete):
-                # Reshape in case of discrete action
-                actions = actions.reshape(-1, 1)
-
+            self._update_info_buffer(infos, dones)            
             # Handle timeout by bootstrapping with value function
             # see GitHub issue #633
             for idx, done in enumerate(dones):
@@ -527,30 +545,332 @@ class OnPolicyDopaAlgorithm(BaseAlgorithm):
                     terminal_obs = self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
                     with th.no_grad():
                         terminal_value = self.policy.predict_values(terminal_obs)[0]  # type: ignore[arg-type]
-                    rewards[idx] += self.gamma * terminal_value
+                    rewards[idx] += self.gamma * terminal_value                                
+            """
+            (3) compute dopa
+            """
+            if n_steps  == 0:
+                dopa = th.zeros(self.n_envs) 
+            else:
+                with th.no_grad():
+                    # convert to tensor
+                    _last_dones_tensor   = th.as_tensor(self._last_episode_starts).view(-1,1)
+                    _last_rewards_tensor = th.as_tensor(_last_rewards).view(-1,1)
+                    _last_raw_rewards_tensor = th.as_tensor(_last_raw_rewards).view(-1,1)
+                    # generate dopa
+                    rollout_data_as_tensor = [_last_raw_rewards_tensor, _last_rewards_tensor, values, _last_values, _last_dones_tensor]
+                    _rewards, _next_values, _values, _dones = self.policy.process_truncated_states(*rollout_data_as_tensor)
+                    dopa = self.policy.gen_td(_rewards, _next_values, _values, _dones)
+
+            n_steps += 1
             
-            meta_rollout_buffer.add(
-                self._meta_last_obs,  # type: ignore[arg-type]
+            """
+            (4) add to rollout data
+            """
+            rollout_buffer.add(
+                self._last_obs,  # type: ignore[arg-type]
                 actions,
                 rewards,
+                raw_rewards,
                 self._last_episode_starts,  # type: ignore[arg-type]
                 values,
-                log_probs,
+                th.zeros_like(dopa),
+                dopa
             )
-            self._meta_last_obs = new_obs  # type: ignore[assignment]
+            self._last_obs = new_obs  # type: ignore[assignment]
             self._last_episode_starts = dones
-
+            _last_rewards = rewards
+            _last_raw_rewards = raw_rewards
+            _last_values  = values
+            #---------- End of rollout ----------
+        
+        """
+        (5) generate the last values and the last dopa
+        """
         with th.no_grad():
             # Compute value for the last timestep
             values = self.policy.predict_values(obs_as_tensor(new_obs, self.device))  # type: ignore[arg-type]
+        
+            # generate dopa for the last timestep
+            _last_dones_tensor   = th.as_tensor(self._last_episode_starts).view(-1,1)
+            _last_rewards_tensor = th.as_tensor(_last_rewards).view(-1,1)
+            _last_raw_rewards_tensor = th.as_tensor(_last_raw_rewards).view(-1,1)
+            
+            rollout_data_as_tensor = [_last_raw_rewards_tensor, _last_rewards_tensor, values, _last_values, _last_dones_tensor]
+            _rewards, _next_values, _values, _dones = self.policy.process_truncated_states(*rollout_data_as_tensor)           
+            _last_dopa = self.policy.gen_td(_rewards, _next_values, _values, _dones)
 
-        meta_rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
+        """
+        (6) add the last dopa to rollout data
+        """
+        rollout_buffer.add_last_dopa(_last_dopa)
+        
+        """
+        (7) compute returns and advantage
+        """
+        rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
 
-        callback.update_locals(locals())
+        # callback.update_locals(locals())
 
-        callback.on_rollout_end()
+        # callback.on_rollout_end()
 
         return True
+
+
+    def collect_sim_rollouts_ver1(
+        self,
+        env: VecEnv,
+        callback: BaseCallback,
+        rollout_buffer: RolloutDopaBuffer,
+        n_rollout_steps: int,
+    ) -> bool:
+        """
+        Collect experiences using the current policy and fill a ``RolloutDopaBuffer``.
+        The term rollout here refers to the model-free notion and should not
+        be used with the concept of rollout used in model-based RL or planning.
+
+        :param env: The training environment
+        :param callback: Callback that will be called at each step
+            (and at the beginning and end of the rollout)
+        :param rollout_buffer: Buffer to fill with rollouts
+        :param n_rollout_steps: Number of experiences to collect per environment
+        :return: True if function returned with at least `n_rollout_steps`
+            collected, False if callback terminated rollout prematurely.
+        """
+        assert self._last_obs is not None, "No previous observation was provided"
+        # Switch to eval mode (this affects batch norm / dropout)
+        # self.policy.set_training_mode(False)
+
+        n_steps = 0
+        rollout_buffer.reset()
+        # callback.on_rollout_start()
+
+        while n_steps < n_rollout_steps:
+
+            with th.no_grad():
+                # Convert to pytorch tensor or to TensorDict
+                obs_tensor = obs_as_tensor(self._last_obs, self.device)
+                """
+                (1) policy
+                """
+                actions, values, log_probs = self.policy(obs_tensor)
+            actions = actions.cpu().numpy()
+            """
+            (2) step
+            """
+            new_obs, rewards, dones, infos = env.step(actions)
+            raw_rewards = np.copy(rewards) 
+            
+            self.num_timesteps += env.num_envs
+
+            # # Give access to local variables
+            # callback.update_locals(locals())
+            # if not callback.on_step():
+            #     return False
+
+            self._update_info_buffer(infos, dones)            
+            # Handle timeout by bootstrapping with value function
+            # see GitHub issue #633
+            for idx, done in enumerate(dones):
+                if (
+                    done
+                    and infos[idx].get("terminal_observation") is not None
+                    and infos[idx].get("TimeLimit.truncated", False)
+                ):
+                    terminal_obs = self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
+                    with th.no_grad():
+                        terminal_value = self.policy.predict_values(terminal_obs)[0]  # type: ignore[arg-type]
+                    rewards[idx] += self.gamma * terminal_value                                
+            """
+            (3) compute dopa
+            """
+            if n_steps  == 0:
+                dopa = th.zeros(self.n_envs) 
+            else:
+                with th.no_grad():
+                    # convert to tensor
+                    _last_dones_tensor   = th.as_tensor(self._last_episode_starts).view(-1,1)
+                    _last_rewards_tensor = th.as_tensor(_last_rewards).view(-1,1)
+                    _last_raw_rewards_tensor = th.as_tensor(_last_raw_rewards).view(-1,1)
+                    # generate dopa
+                    rollout_data_as_tensor = [_last_raw_rewards_tensor, _last_rewards_tensor, values, _last_values, _last_dones_tensor]
+                    _rewards, _next_values, _values, _dones = self.policy.process_truncated_states(*rollout_data_as_tensor)
+                    dopa = self.policy.gen_td(_rewards, _next_values, _values, _dones)
+
+            n_steps += 1
+            
+            """
+            (4) add to rollout data
+            """
+            rollout_buffer.add(
+                self._last_obs,  # type: ignore[arg-type]
+                actions,
+                rewards,
+                raw_rewards,
+                self._last_episode_starts,  # type: ignore[arg-type]
+                values,
+                log_probs,
+                dopa
+            )
+            self._last_obs = new_obs  # type: ignore[assignment]
+            self._last_episode_starts = dones
+            _last_rewards = rewards
+            _last_raw_rewards = raw_rewards
+            _last_values  = values
+            #---------- End of rollout ----------
+        
+        """
+        (5) generate the last values and the last dopa
+        """
+        with th.no_grad():
+            # Compute value for the last timestep
+            values = self.policy.predict_values(obs_as_tensor(new_obs, self.device))  # type: ignore[arg-type]
+        
+            # generate dopa for the last timestep
+            _last_dones_tensor   = th.as_tensor(self._last_episode_starts).view(-1,1)
+            _last_rewards_tensor = th.as_tensor(_last_rewards).view(-1,1)
+            _last_raw_rewards_tensor = th.as_tensor(_last_raw_rewards).view(-1,1)
+            
+            rollout_data_as_tensor = [_last_raw_rewards_tensor, _last_rewards_tensor, values, _last_values, _last_dones_tensor]
+            _rewards, _next_values, _values, _dones = self.policy.process_truncated_states(*rollout_data_as_tensor)           
+            _last_dopa = self.policy.gen_td(_rewards, _next_values, _values, _dones)
+
+        """
+        (6) add the last dopa to rollout data
+        """
+        rollout_buffer.add_last_dopa(_last_dopa)
+        
+        """
+        (7) compute returns and advantage
+        """
+        rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
+
+        # callback.update_locals(locals())
+
+        # callback.on_rollout_end()
+
+        return True
+
+
+    # def collect_meta_rollouts(
+    #     self,
+    #     env: VecEnv,
+    #     callback: BaseCallback,
+    #     meta_rollout_buffer: MetaRolloutBuffer,
+    #     n_meta_rollout_steps: int,
+    #     rollout_last_obs: np.ndarray
+    # ) -> bool:
+    #     """
+    #     Collect experiences using the current policy and fill a ``RolloutBuffer``.
+    #     The term rollout here refers to the model-free notion and should not
+    #     be used with the concept of rollout used in model-based RL or planning.
+
+    #     :param env: The training environment
+    #     :param callback: Callback that will be called at each step
+    #         (and at the beginning and end of the rollout)
+    #     :param meta_rollout_buffer: Buffer to fill with rollouts
+    #     :param n_meta_rollout_steps: Number of experiences to collect per environment
+    #     :return: True if function returned with at least `n_meta_rollout_steps`
+    #         collected, False if callback terminated rollout prematurely.
+    #     """
+
+    #     """
+    #     use last_obs from RL-rollout as the initial state
+    #     """
+    #     # assert rollout_last_obs.shape[0] == 1, "Error: Rolled out more than 1 step"
+    #     self._meta_last_obs = np.squeeze(rollout_last_obs)
+    #     # Switch to eval mode (this affects batch norm / dropout)
+    #     self.policy.set_training_mode(False)
+
+    #     n_steps = 0
+    #     meta_rollout_buffer.reset()
+    #     # Sample new weights for the state dependent exploration
+    #     if self.use_sde:
+    #         self.policy.reset_noise(env.num_envs)
+
+    #     callback.on_rollout_start()
+
+    #     while n_steps < n_meta_rollout_steps:
+    #         if self.use_sde and self.sde_sample_freq > 0 and n_steps % self.sde_sample_freq == 0:
+    #             # Sample a new noise matrix
+    #             self.policy.reset_noise(env.num_envs)
+
+    #         with th.no_grad():
+    #             """
+    #             use last_obs from the RL-rollout, intead of self._last_obs
+    #             """
+    #             # Convert to pytorch tensor or to TensorDict
+    #             obs_tensor = obs_as_tensor(self._meta_last_obs, self.device)
+    #             actions, values, log_probs = self.policy(obs_tensor)
+    #         actions = actions.cpu().numpy()
+
+    #         # Rescale and perform action
+    #         clipped_actions = actions
+
+    #         if isinstance(self.action_space, spaces.Box):
+    #             if self.policy.squash_output:
+    #                 # Unscale the actions to match env bounds
+    #                 # if they were previously squashed (scaled in [-1, 1])
+    #                 clipped_actions = self.policy.unscale_action(clipped_actions)
+    #             else:
+    #                 # Otherwise, clip the actions to avoid out of bound error
+    #                 # as we are sampling from an unbounded Gaussian distribution
+    #                 clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
+
+    #         new_obs, rewards, dones, infos = env.step(clipped_actions)
+
+    #         """
+    #         meta-rollouts should not count towards the actual rollout steps
+    #         """
+    #         # self.num_timesteps += env.num_envs
+
+    #         # Give access to local variables
+    #         callback.update_locals(locals())
+    #         if not callback.on_step():
+    #             return False
+
+    #         self._update_info_buffer(infos, dones)
+    #         n_steps += 1
+
+    #         if isinstance(self.action_space, spaces.Discrete):
+    #             # Reshape in case of discrete action
+    #             actions = actions.reshape(-1, 1)
+
+    #         # Handle timeout by bootstrapping with value function
+    #         # see GitHub issue #633
+    #         for idx, done in enumerate(dones):
+    #             if (
+    #                 done
+    #                 and infos[idx].get("terminal_observation") is not None
+    #                 and infos[idx].get("TimeLimit.truncated", False)
+    #             ):
+    #                 terminal_obs = self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
+    #                 with th.no_grad():
+    #                     terminal_value = self.policy.predict_values(terminal_obs)[0]  # type: ignore[arg-type]
+    #                 rewards[idx] += self.gamma * terminal_value
+            
+    #         meta_rollout_buffer.add(
+    #             self._meta_last_obs,  # type: ignore[arg-type]
+    #             actions,
+    #             rewards,
+    #             self._last_episode_starts,  # type: ignore[arg-type]
+    #             values,
+    #             log_probs,
+    #         )
+    #         self._meta_last_obs = new_obs  # type: ignore[assignment]
+    #         self._last_episode_starts = dones
+
+    #     with th.no_grad():
+    #         # Compute value for the last timestep
+    #         values = self.policy.predict_values(obs_as_tensor(new_obs, self.device))  # type: ignore[arg-type]
+
+    #     meta_rollout_buffer.compute_returns_and_advantage(last_values=values, dones=dones)
+
+    #     callback.update_locals(locals())
+
+    #     callback.on_rollout_end()
+
+    #     return True
 
 
     def dump_logs(self, iteration: int = 0) -> None:

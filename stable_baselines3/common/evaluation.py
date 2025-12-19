@@ -82,6 +82,9 @@ def evaluate_policy(
     # Divides episodes among different sub environments in the vector as evenly as possible
     episode_count_targets = np.array([(n_eval_episodes + i) // n_envs for i in range(n_envs)], dtype="int")
 
+    all_rewards = []
+    all_rewards_epis = np.array([])
+    
     current_rewards = np.zeros(n_envs)
     current_lengths = np.zeros(n_envs, dtype="int")
     observations = env.reset()
@@ -96,7 +99,8 @@ def evaluate_policy(
         )
         new_observations, rewards, dones, infos = env.step(actions)
         current_rewards += rewards
-        current_lengths += 1
+        current_lengths += 1        
+        all_rewards_epis = np.append(all_rewards_epis, rewards)
         for i in range(n_envs):
             if episode_counts[i] < episode_count_targets[i]:
                 # unpack values so that the callback can access the local variables
@@ -125,6 +129,10 @@ def evaluate_policy(
                         episode_rewards.append(current_rewards[i])
                         episode_lengths.append(current_lengths[i])
                         episode_counts[i] += 1
+                        
+                        all_rewards.append(all_rewards_epis)
+                        all_rewards_epis = np.array([])
+                        
                     current_rewards[i] = 0
                     current_lengths[i] = 0
 
@@ -139,4 +147,4 @@ def evaluate_policy(
         assert mean_reward > reward_threshold, "Mean reward below threshold: " f"{mean_reward:.2f} < {reward_threshold:.2f}"
     if return_episode_rewards:
         return episode_rewards, episode_lengths
-    return mean_reward, std_reward
+    return mean_reward, std_reward, all_rewards

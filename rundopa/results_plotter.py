@@ -128,7 +128,7 @@ def plot_results(
     xy_list = [ts2xy(data_frame, x_axis) for data_frame in data_frames]
     plot_curves(xy_list, x_axis, task_name, frac, figsize)
 
-def collect_agents(dirs: list[str]) -> pd.DataFrame:
+def collect_agents_reward(dirs: list[str]) -> pd.DataFrame:
     
     for folder in dirs:
         if os.path.isdir(folder):
@@ -144,6 +144,44 @@ def collect_agents(dirs: list[str]) -> pd.DataFrame:
         agents.append(agent)
 
     return agents
+
+def load_rlzoo(
+    folder: str, x_axis: str, nenvs: int, ninc: int, tinc: float,
+) -> None:
+    """
+    Plot the results using csv files from ``Monitor`` wrapper.
+
+    :param dirs: the save location of the results to plot
+    :param num_timesteps: only plot the points below this value
+    :param x_axis: the axis for the x and y output
+        (can be X_TIMESTEPS='timesteps', X_EPISODES='episodes' or X_WALLTIME='walltime_hrs')
+    :param task_name: the title of the task to plot
+    :param figsize: Size of the figure (width, height)
+    """
+
+    if os.path.isdir(folder):
+        data_frames = collect_agents_df(folder)
+    env_list = [ts2xy(data_frame, x_axis) for data_frame in data_frames]
+    
+    reward  = [[] for _ in range(ninc)]
+    for envi in range(nenvs):
+        time = env_list[envi][0]
+        rew  = env_list[envi][1]
+        tidx = (time/ tinc).astype(int)
+        for ix, ti in enumerate(tidx):
+            if ti == ninc:
+                ti = ti-1
+            reward[ti].append(rew[ix])
+        
+    reward_avg = np.zeros(ninc)
+    reward_sem = np.zeros(ninc)
+    for ti in range(ninc):
+        cnt = len(reward[ti])
+        if cnt > 0:
+            reward_avg[ti] = np.mean(reward[ti])
+            reward_sem[ti] = np.std(reward[ti]) / np.sqrt(cnt)
+    return env_list, reward_avg, reward_sem            
+    
 
 def collect_topk(
     dirs: list[str], nagents: int, topk : int, num_timesteps: Optional[int], x_axis: str, frac: str="all", halftime : float=4e5

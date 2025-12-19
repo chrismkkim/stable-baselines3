@@ -26,45 +26,34 @@ from stable_baselines3.common import results_plotter
 
 
 #    CartPole-v1 CartPole-v1 1
+#    LunarLander-v3
 
 def main():
     parser = argparse.ArgumentParser(
         description="Run both Dopa and A2C (with their YAML defaults) on the same env."
     )
     parser.add_argument(
-        "env_id_meta",
+        "env_id",
         type=str,
         help="Gym environment ID (e.g. CartPole-v1, LunarLander-v3)."
-    )
-    parser.add_argument(
-        "env_id_rl",
-        type=str,
-        help="Gym environment ID (e.g. CartPole-v1, LunarLander-v3)."
-    )    
-    parser.add_argument(
-        "sim_id",
-        type=str,
-        help="Sim id."
     )
     
     args = parser.parse_args()
-    env_id_meta = args.env_id_meta
-    env_id_rl   = args.env_id_rl
-    sim_id      = args.sim_id
+    env_id      = args.env_id
 
     # We assume train.py lives in the same folder as this script.
     path = '/Users/kimchm/Documents/GitHub/rl-baselines3-zoo/'
     zoo_root = os.path.abspath(path)
 
     # List of algorithms to run in sequence:
-    algo    = 'dopa'
-    yaml    = ["dopa_meta.yml", "dopa_rl.yml"]
-    env_ids = [env_id_meta, env_id_rl]
+    algo    = 'a2c'
+    yaml    = ['a2c_mod.yml']
+    env_ids = [env_id]
     
     # path to log 
     path        = '/Users/kimchm/Documents/RL/trainedmodel/'
-    path_envs   = env_id_meta + '_' + env_id_rl + '/'
-    path_to_log = path + path_envs + sim_id
+    path_envs   = env_id 
+    path_to_log = path + path_envs 
     path_to_par = 'hyperparams/'
     for i in range(len(yaml)):
         print("\n" + "=" * 60)
@@ -78,10 +67,9 @@ def main():
             "--conf-file", path_to_par + yaml[i],
             "--env", env_ids[i],
             "--log-folder", path_to_log,
-            "--tensorboard-log", path_to_log,
             "--verbose", "0",
-            "--train-envs", f"meta:'{env_ids[0]}'", f"rl:'{env_ids[1]}'",
-            "--eval-episodes", "100"
+            "--eval-episodes", "100", 
+            "--eval-num", "20"
         ]
         
         # Run train.py in the zoo root
@@ -91,7 +79,7 @@ def main():
             print(f"\nERROR: `train.py --algo {algo} --env {env_ids[i]}` exited with code {e.returncode}\n")
             sys.exit(e.returncode)
 
-    print("\nAll done: both Dopa and A2C have finished training on:", env_ids[i])  
+    # print("\nAll done: both Dopa and A2C have finished training on:", env_ids[i])  
 
 if __name__ == "__main__":
     main()
