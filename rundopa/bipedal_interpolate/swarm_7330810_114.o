@@ -1,0 +1,167 @@
+---- COMMAND EXECUTED: ---------------------------------------------------------
+(   source /data/kimchm/conda/bin/activate pyrl && python3 run_dopa.py BipedalWalker-v3 BipedalWalker-v3 60 128 1.0 14 )
+--------------------------------------------------------------------------------
+========== BipedalWalker-v3 ==========
+Seed: 2193160701
+Loading hyperparameters from: hyperparams/BipedalWalker-v3/tdnet_interpolate/swarm_meta_envs60_units128_inter1.0.yml
+Default hyperparameters for environment (ones being tuned will be overridden):
+OrderedDict([('ent_coef', 0.00015),
+             ('gae_lambda', 0.0),
+             ('gamma', 0.99),
+             ('interpolation_constant', 1.0),
+             ('learning_rate', 0.0006),
+             ('learning_rate_dopa', 0.0001),
+             ('n_envs', 60),
+             ('n_meta_steps', 1),
+             ('n_rlnet_reset', 10),
+             ('n_steps', 1),
+             ('n_timesteps', 9600000.0),
+             ('net_arch',
+              'dict(pi=[64, 64], vf=[64, 64], re=[64,64], td=[128,128,128,1])'),
+             ('normalize_values', False),
+             ('policy', 'MlpPolicy'),
+             ('tracker_window_size', 1000),
+             ('traintype_meta', True)])
+Log path: /data/kimchm/data/RL/BipedalWalker-v3_BipedalWalker-v3/interpolate/env_60_unit_128_inter_1.0/14/dopa/BipedalWalker-v3_1
+
+Reset RL network:  1
+Eval num_timesteps=480000, episode_reward=-80.42 +/- 13.69
+Episode length: 1585.39 +/- 145.37
+New best mean reward!
+Eval num_timesteps=960000, episode_reward=-107.92 +/- 5.07
+Episode length: 1600.00 +/- 0.00
+
+Reset RL network:  2
+Eval num_timesteps=1440000, episode_reward=-152.30 +/- 10.93
+Episode length: 1600.00 +/- 0.00
+Eval num_timesteps=1920000, episode_reward=-182.21 +/- 2.67
+Episode length: 1600.00 +/- 0.00
+
+Reset RL network:  3
+Eval num_timesteps=2400000, episode_reward=-143.70 +/- 9.26
+Episode length: 1600.00 +/- 0.00
+Eval num_timesteps=2880000, episode_reward=-160.24 +/- 31.01
+Episode length: 1121.08 +/- 698.14
+
+Reset RL network:  4
+Eval num_timesteps=3360000, episode_reward=-105.07 +/- 10.20
+Episode length: 868.09 +/- 777.23
+Eval num_timesteps=3840000, episode_reward=-107.59 +/- 4.66
+Episode length: 912.28 +/- 775.85
+
+Reset RL network:  5
+Eval num_timesteps=4320000, episode_reward=-108.91 +/- 10.71
+Episode length: 59.67 +/- 25.98
+Eval num_timesteps=4800000, episode_reward=-104.43 +/- 9.68
+Episode length: 1600.00 +/- 0.00
+
+Reset RL network:  6
+Eval num_timesteps=5280000, episode_reward=-125.10 +/- 2.68
+Episode length: 116.84 +/- 22.32
+Eval num_timesteps=5760000, episode_reward=-163.74 +/- 32.35
+Episode length: 1243.58 +/- 617.60
+
+Reset RL network:  7
+Eval num_timesteps=6240000, episode_reward=-151.66 +/- 1.12
+Episode length: 1600.00 +/- 0.00
+Eval num_timesteps=6720000, episode_reward=-154.47 +/- 1.01
+Episode length: 1600.00 +/- 0.00
+
+Reset RL network:  8
+Eval num_timesteps=7200000, episode_reward=-115.21 +/- 0.25
+Episode length: 47.59 +/- 0.49
+Eval num_timesteps=7680000, episode_reward=-110.88 +/- 0.15
+Episode length: 1600.00 +/- 0.00
+
+Reset RL network:  9
+Eval num_timesteps=8160000, episode_reward=-134.41 +/- 6.57
+Episode length: 1558.00 +/- 238.82
+Eval num_timesteps=8640000, episode_reward=-116.96 +/- 4.65
+Episode length: 1600.00 +/- 0.00
+
+Reset RL network:  10
+Eval num_timesteps=9120000, episode_reward=-102.06 +/- 0.18
+Episode length: 86.17 +/- 1.55
+Eval num_timesteps=9600000, episode_reward=-145.54 +/- 3.82
+Episode length: 1600.00 +/- 0.00
+Saving to /data/kimchm/data/RL/BipedalWalker-v3_BipedalWalker-v3/interpolate/env_60_unit_128_inter_1.0/14/dopa/BipedalWalker-v3_1
+========== BipedalWalker-v3 ==========
+Seed: 4232141431
+Loading hyperparameters from: hyperparams/BipedalWalker-v3/tdnet_interpolate/swarm_rl_envs60_units128_inter1.0.yml
+Default hyperparameters for environment (ones being tuned will be overridden):
+OrderedDict([('ent_coef', 0.00015),
+             ('gae_lambda', 0.0),
+             ('gamma', 0.99),
+             ('interpolation_constant', 1.0),
+             ('learning_rate', 0.0006),
+             ('learning_rate_dopa', 0.0001),
+             ('n_envs', 60),
+             ('n_meta_steps', 1),
+             ('n_rlnet_reset', 10),
+             ('n_steps', 1),
+             ('n_timesteps', 9600000.0),
+             ('net_arch',
+              'dict(pi=[64, 64], vf=[64, 64], re=[64,64], td=[128,128,128,1])'),
+             ('normalize_values', False),
+             ('policy', 'MlpPolicy'),
+             ('tracker_window_size', 1000),
+             ('traintype_meta', False)])
+Log path: /data/kimchm/data/RL/BipedalWalker-v3_BipedalWalker-v3/interpolate/env_60_unit_128_inter_1.0/14/dopa/BipedalWalker-v3_2
+Eval num_timesteps=480000, episode_reward=-102.63 +/- 0.05
+Episode length: 78.40 +/- 0.55
+New best mean reward!
+Eval num_timesteps=960000, episode_reward=-102.72 +/- 0.07
+Episode length: 78.44 +/- 0.52
+Eval num_timesteps=1440000, episode_reward=-102.72 +/- 0.08
+Episode length: 78.48 +/- 0.56
+Eval num_timesteps=1920000, episode_reward=-102.48 +/- 0.07
+Episode length: 78.59 +/- 0.49
+New best mean reward!
+Eval num_timesteps=2400000, episode_reward=-102.57 +/- 0.07
+Episode length: 78.32 +/- 0.55
+Eval num_timesteps=2880000, episode_reward=-102.37 +/- 0.21
+Episode length: 75.91 +/- 1.10
+New best mean reward!
+Eval num_timesteps=3360000, episode_reward=-102.48 +/- 0.19
+Episode length: 77.25 +/- 1.68
+Eval num_timesteps=3840000, episode_reward=-102.49 +/- 0.23
+Episode length: 78.93 +/- 1.13
+Eval num_timesteps=4320000, episode_reward=-148.95 +/- 39.48
+Episode length: 960.38 +/- 751.64
+Eval num_timesteps=4800000, episode_reward=-127.57 +/- 36.85
+Episode length: 552.63 +/- 702.03
+Eval num_timesteps=5280000, episode_reward=-170.79 +/- 2.61
+Episode length: 1600.00 +/- 0.00
+Eval num_timesteps=5760000, episode_reward=-146.93 +/- 12.04
+Episode length: 1485.79 +/- 387.67
+Eval num_timesteps=6240000, episode_reward=-127.16 +/- 20.38
+Episode length: 503.12 +/- 650.37
+Eval num_timesteps=6720000, episode_reward=-133.82 +/- 21.01
+Episode length: 324.90 +/- 597.41
+Eval num_timesteps=7200000, episode_reward=-127.53 +/- 14.00
+Episode length: 153.85 +/- 396.75
+Eval num_timesteps=7680000, episode_reward=-176.70 +/- 0.42
+Episode length: 1600.00 +/- 0.00
+Eval num_timesteps=8160000, episode_reward=-167.19 +/- 9.22
+Episode length: 1553.21 +/- 266.06
+Eval num_timesteps=8640000, episode_reward=-141.50 +/- 5.51
+Episode length: 1600.00 +/- 0.00
+Eval num_timesteps=9120000, episode_reward=-165.53 +/- 19.66
+Episode length: 1396.94 +/- 525.31
+Eval num_timesteps=9600000, episode_reward=-130.16 +/- 10.57
+Episode length: 1195.08 +/- 665.81
+Saving to /data/kimchm/data/RL/BipedalWalker-v3_BipedalWalker-v3/interpolate/env_60_unit_128_inter_1.0/14/dopa/BipedalWalker-v3_2
+
+============================================================
+Starting training with algo = dopa, env = BipedalWalker-v3
+============================================================
+
+
+============================================================
+Starting training with algo = dopa, env = BipedalWalker-v3
+============================================================
+
+
+All done: both Dopa and A2C have finished training on: BipedalWalker-v3
+
+Delete trained models

@@ -333,12 +333,12 @@ class Dopa(OnPolicyDopaAlgorithm):
         with th.no_grad():
             loss_meta = self.compute_metaloss_using_rollout(rollout_data)            
         
-        #==== Choose one from the two ====#
-        #--- (1) use dopa instead of advantage ---#
-        loss_rl = self.compute_rlloss_using_dopa(rollout_data)
+        # #==== Choose one from the two ====#
+        # #--- (1) use dopa instead of advantage ---#
+        # loss_rl = self.compute_rlloss_using_dopa(rollout_data)
         
-        # #--- (2) use the interpolation between dopa and advantage ---#
-        # loss_rl = self.compute_rlloss_using_dopa_interpolated(rollout_data)
+        #--- (2) use the interpolation between dopa and advantage ---#
+        loss_rl = self.compute_rlloss_using_dopa_interpolated(rollout_data)
         
         # Optimization step
         self.policy.optimizer.zero_grad()
