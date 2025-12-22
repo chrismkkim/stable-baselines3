@@ -267,33 +267,26 @@ class Dopa(OnPolicyDopaAlgorithm):
         """
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
-
-        # # Update optimizer learning rate
-        # frac = time_step / total_timesteps
-        # lr_dopa_adaptive = 0.1*self.policy.learning_rate_dopa * frac + self.policy.learning_rate_dopa * (1-frac)
-        # loss_meta_avg = self.tracker_metaLoss.update(loss_meta)    
-        # if time_step > self.tracker_window_size * self.n_envs:
-        #     if self.tracker_metaLoss.below_threshold(threshold=-2):
-        #         self._update_my_lr(optimizer=self.policy.optimizer, optimizer_meta=self.policy.optimizer_meta, learning_rate=self.learning_rate, learning_rate_dopa=1e-4)
-        # self._update_learning_rate(self.policy.optimizer)
         
-        progress = time_step / total_timesteps
+        # progress = time_step / total_timesteps
         for rollout_data in self.rollout_buffer.get(batch_size=None):       
-            
-            if self.traintype_meta:
-                loss_meta, loss_rl = self.meta_rollout_expanded_rl_dopa(rollout_data)
-                # loss_meta, loss_rl = self.meta_dummy(time_step, total_timesteps)
-                # loss_meta, loss_rl = self.meta_rollout_rl_dopa(rollout_data)
-                # _, _ = self.meta_rollout_rl_td(rollout_data)                
+            '''
+            #TODO.3 EXECUTE META TRAINING
+                - TEMPORARILY LEFT OUT TO MATCH WITH A2C
+            '''
+            # if self.traintype_meta:
+            #     loss_meta, loss_rl = self.meta_rollout_expanded_rl_dopa(rollout_data)
 
-                # reset RL network parameters
-                if self.reset_rlnet.time_for_reset(prg=progress):
-                    self.rlnet_param_reset()           
-                    print('\nReset RL network: ', self.reset_rlnet.k)                         
-            else:
-                if self.replace_tdnet:
-                    self.load_meta_tdnet()
-                loss_meta, loss_rl = self.rl_dopa(rollout_data)
+            #     # reset RL network parameters
+            #     if self.reset_rlnet.time_for_reset(prg=progress):
+            #         self.rlnet_param_reset()           
+            #         print('\nReset RL network: ', self.reset_rlnet.k)                         
+            # else:
+            #     if self.replace_tdnet:
+            #         self.load_meta_tdnet()
+            #     loss_meta, loss_rl = self.rl_dopa(rollout_data)
+                
+            loss_meta, loss_rl = self.rl_dopa(rollout_data)
                                                 
             # Clip grad norm
             # th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
@@ -340,6 +333,9 @@ class Dopa(OnPolicyDopaAlgorithm):
         #--- (2) use the interpolation between dopa and advantage ---#
         loss_rl = self.compute_rlloss_using_dopa_interpolated(rollout_data)
         
+        '''
+        optimization step commented out
+        '''        
         # Optimization step
         self.policy.optimizer.zero_grad()
         loss_rl.backward()

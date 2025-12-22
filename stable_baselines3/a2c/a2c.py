@@ -170,6 +170,9 @@ class A2C(OnPolicyAlgorithm):
 
             loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
 
+            '''
+            optimization step commented out
+            '''
             # Optimization step
             self.policy.optimizer.zero_grad()
             loss.backward()
@@ -177,6 +180,7 @@ class A2C(OnPolicyAlgorithm):
             # Clip grad norm
             # th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
             self.policy.optimizer.step()
+            x=1
 
         explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
 

@@ -4,6 +4,7 @@ import gymnasium as gym
 import torch as th
 from gymnasium import spaces
 from torch import nn
+import torch
 
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim, is_image_space
 from stable_baselines3.common.type_aliases import TensorDict
@@ -248,6 +249,7 @@ class MlpExtractor(nn.Module):
         # If the list of layers is empty, the network will just act as an Identity module
         self.policy_net = nn.Sequential(*policy_net).to(device)
         self.value_net = nn.Sequential(*value_net).to(device)
+        x=1
 
     def forward(self, features: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
         """
@@ -332,40 +334,38 @@ class MlpExtractorDopa(nn.Module):
             value_net.append(nn.Linear(last_layer_dim_vf, curr_layer_dim))
             value_net.append(activation_fn())
             last_layer_dim_vf = curr_layer_dim
-        # Iterate through the reward layers and build the reward net
-        for curr_layer_dim in re_layers_dims:
-            reward_net.append(nn.Linear(last_layer_dim_re, curr_layer_dim))
-            reward_net.append(activation_fn())
-            last_layer_dim_re = curr_layer_dim     
-        # Iterate through the dopa layers and build the td net
-        for layer_num, curr_layer_dim in enumerate(td_layers_dims):
-            td_net.append(nn.Linear(last_layer_dim_td, curr_layer_dim))
-            if layer_num < len(td_layers_dims) -1 :
-                td_net.append(activation_fn())
-            last_layer_dim_td = curr_layer_dim
+        
+        
+        '''
+        #TODO.2 USE THIS LINE TO CONSTRUCT TD_NET
+            - TEMPORARILY COMMENTED OUT TO MATCH WITH A2C.
+            - DON'T USE TORCH.LOAD() BELOW, SINCE SAVED MODEL IS NOT LOADED IN PRACTICE.
+        '''
+        # # Iterate through the dopa layers and build the td net
+        # for layer_num, curr_layer_dim in enumerate(td_layers_dims):
+        #     td_net.append(nn.Linear(last_layer_dim_td, curr_layer_dim))
+        #     if layer_num < len(td_layers_dims) -1 :
+        #         td_net.append(activation_fn())
+        #     last_layer_dim_td = curr_layer_dim
 
         # Save dim, used to create the distributions
         self.latent_dim_pi = last_layer_dim_pi
         self.latent_dim_vf = last_layer_dim_vf
-        self.latent_dim_re = last_layer_dim_re
-        # self.latent_dim_v2d = last_layer_dim_v2d
-        # self.latent_dim_nextv2d = last_layer_dim_nextv2d
-        # self.latent_dim_r2d = last_layer_dim_r2d
-        # self.latent_dim_d2d = last_layer_dim_d2d
-        # self.latent_dim_da = last_layer_dim_da
-
+        self.latent_dim_re = last_layer_dim_re        
+        
         # Create networks
         # If the list of layers is empty, the network will just act as an Identity module
         self.policy_net = nn.Sequential(*policy_net).to(device)
         self.value_net = nn.Sequential(*value_net).to(device)
-        self.reward_net = nn.Sequential(*reward_net).to(device)
-        # self.v2d_net = nn.Sequential(*v2d_net).to(device)
-        # self.nextv2d_net = nn.Sequential(*nextv2d_net).to(device)
-        # self.r2d_net = nn.Sequential(*r2d_net).to(device)
-        # self.d2d_net = nn.Sequential(*d2d_net).to(device)
-        # self.dopa_net = nn.Sequential(*dopa_net).to(device)
-        self.td_net = nn.Sequential(*td_net).to(device)
-
+        # self.reward_net = nn.Sequential(*reward_net).to(device)
+        # self.td_net = nn.Sequential(*td_net).to(device)
+        '''
+        #TODO.2 COMMENT OUT THIS LINE. DON'T LOAD A SAVED MODEL IN PRACTICE.
+            - TEMPORARILY ADDED TO MATCH WITH A2C.
+        '''
+        path_to_model = '/Users/kimchm/Documents/RL/trainedmodel/BipedalWalker-v3_BipedalWalker-v3/tmp/'
+        # torch.save(self.td_net, path_to_model + 'tdnet.pt')
+        self.td_net = torch.load(path_to_model + 'tdnet.pt', weights_only=False)
 
     def forward(self, features: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
         """
@@ -380,8 +380,8 @@ class MlpExtractorDopa(nn.Module):
     def forward_critic(self, features: th.Tensor) -> th.Tensor:
         return self.value_net(features)
 
-    def forward_reward(self, features: th.Tensor) -> th.Tensor:
-        return self.reward_net(features)
+    # def forward_reward(self, features: th.Tensor) -> th.Tensor:
+    #     return self.reward_net(features)
 
     # def forward_v2d(self, features: th.Tensor) -> th.Tensor:
     #     return self.v2d_net(features)

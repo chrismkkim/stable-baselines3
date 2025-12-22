@@ -25,8 +25,8 @@ import os
 from stable_baselines3.common import results_plotter
 
 
-#    BipedalWalker-v3 BipedalWalker-v3 60 128 0.0 0
-#    BipedalWalker-v3 BipedalWalker-v3 60 128 1.0 0
+#    BipedalWalker-v3 BipedalWalker-v3 1 16 0.0 0
+#    BipedalWalker-v3 BipedalWalker-v3 1 16 1.0 0
 
 def main():
     parser = argparse.ArgumentParser(
@@ -72,10 +72,11 @@ def main():
     sim_id      = args.sim_id
 
     # We assume train.py lives in the same folder as this script.
-    path = '/home/kimchm/RL/rl-baselines3-zoo/'
+    path = '/Users/kimchm/Documents/GitHub/rl-baselines3-zoo/'
     zoo_root = os.path.abspath(path)
 
-    temporary_testing = False    
+    temporary_testing = True    
+    rndseed = str(123)
     
     # List of algorithms to run in sequence:
     algo    = 'dopa'
@@ -89,7 +90,7 @@ def main():
     env_ids = [env_id_meta, env_id_rl]
     
     # path to log 
-    path        = '/data/kimchm/data/RL/'
+    path        = '/Users/kimchm/Documents/RL/trainedmodel/'
     '''
     (2) change path_to_log
     '''
@@ -116,7 +117,8 @@ def main():
                 "--verbose", "0",
                 "--train-envs", f"meta:'{env_ids[0]}'", f"rl:'{env_ids[1]}'",
                 "--eval-episodes", "100",
-                "--eval-num", "20"
+                "--eval-num", "20",
+                "--seed", rndseed
             ]        
         else:
             cmd = [
@@ -130,7 +132,8 @@ def main():
                 "--verbose", "0",
                 "--train-envs", f"meta:'{env_ids[0]}'", f"rl:'{env_ids[1]}'",
                 "--eval-episodes", "1",
-                "--eval-num", "2"
+                "--eval-num", "2",
+                "--seed", rndseed
             ]
                 
         # Run train.py in the zoo root

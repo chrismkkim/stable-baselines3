@@ -25,7 +25,7 @@ import os
 from stable_baselines3.common import results_plotter
 
 
-#    BipedalWalker-v3 60 0.0006 0.00015 0
+#    BipedalWalker-v3 1 0.0006 0.00015 0
 
 def main():
     parser = argparse.ArgumentParser(
@@ -65,34 +65,55 @@ def main():
     sim_id      = args.sim_id
 
     # We assume train.py lives in the same folder as this script.
-    path = '/home/kimchm/RL/rl-baselines3-zoo/'
+    path = '/Users/kimchm/Documents/GitHub/rl-baselines3-zoo/'
     zoo_root = os.path.abspath(path)
 
+    temporary_testing = True
+    rndseed = str(123)
+    
     # List of algorithms to run in sequence:
     algo    = 'a2c'
-    yaml    = [f"a2c_env{nenv}_lr{lr}_ent{entcoef}.yml"]
+    if not temporary_testing:
+        yaml    = [f"a2c_env{nenv}_lr{lr}_ent{entcoef}.yml"]
+    else:
+        yaml    = [f"a2c_env{nenv}_lr{lr}_ent{entcoef}_tmp.yml"]
     env_ids = [env_id]
     
     # path to log 
-    path_to_log = '/data/kimchm/data/RL/a2c/' + env_id + '/' + 'env_' + nenv + '_lr_' + lr + '_ent_' + entcoef + '/' + sim_id
+    path        = '/Users/kimchm/Documents/RL/trainedmodel/'
+    path_to_log = path + env_id + '/' + 'env_' + nenv + '_lr_' + lr + '_ent_' + entcoef + '/' + sim_id
     path_to_par = 'hyperparams/' + env_id + '/a2c/'
     for i in range(len(yaml)):
         print("\n" + "=" * 60)
         print(f"Starting training with algo = {algo}, env = {env_ids[i]}")
         print("=" * 60 + "\n")
 
-        cmd = [
-            sys.executable,         # ensures same Python interpreter
-            "train.py",
-            "--algo", algo,
-            "--conf-file", path_to_par + yaml[i],
-            "--env", env_ids[i],
-            "--log-folder", path_to_log,
-            "--verbose", "0",
-            "--eval-episodes", "100",
-            "--eval-num", "20"
-        ]
-        
+        if not temporary_testing:
+            cmd = [
+                sys.executable,         # ensures same Python interpreter
+                "train.py",
+                "--algo", algo,
+                "--conf-file", path_to_par + yaml[i],
+                "--env", env_ids[i],
+                "--log-folder", path_to_log,
+                "--verbose", "0",
+                "--eval-episodes", "100",
+                "--eval-num", "20",
+                "--seed", rndseed
+            ]
+        else:
+            cmd = [
+                sys.executable,         # ensures same Python interpreter
+                "train.py",
+                "--algo", algo,
+                "--conf-file", path_to_par + yaml[i],
+                "--env", env_ids[i],
+                "--log-folder", path_to_log,
+                "--verbose", "0",
+                "--eval-episodes", "1",
+                "--eval-num", "2",
+                "--seed", rndseed
+            ]            
         # Run train.py in the zoo root
         try:
             subprocess.run(cmd, cwd=zoo_root, check=True)

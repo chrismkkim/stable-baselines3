@@ -804,7 +804,7 @@ class ActorCriticDopaPolicy(BasePolicy):
         lr_schedule: Schedule,
         learning_rate_dopa: float = 1e-2,
         gamma: float = 1.0,
-        da_net_names: list[str] = ["reward", "v2d", "nextv2d", "r2d", "d2d", "dopa", "td"],
+        da_net_names: list[str] = ["td_net"], # now ["td_net"], previously ["reward", "v2d", "nextv2d", "r2d", "d2d", "dopa", "td"],
         net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None,
         activation_fn: type[nn.Module] = nn.ReLU,
         ortho_init: bool = True,
@@ -965,7 +965,7 @@ class ActorCriticDopaPolicy(BasePolicy):
             raise NotImplementedError(f"Unsupported distribution '{self.action_dist}'.")
 
         self.value_net  = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
-        self.reward_net = nn.Linear(self.mlp_extractor.latent_dim_re, 1)
+        # self.reward_net = nn.Linear(self.mlp_extractor.latent_dim_re, 1)
         # self.dopa_net   = nn.Linear(self.mlp_extractor.latent_dim_da, 1)
         # Init weights: use orthogonal initialization
         # with small initial weight for the output
@@ -986,13 +986,33 @@ class ActorCriticDopaPolicy(BasePolicy):
                 del module_gains[self.features_extractor]
                 module_gains[self.pi_features_extractor] = np.sqrt(2)
                 module_gains[self.vf_features_extractor] = np.sqrt(2)
+            '''
+            #TODO.1 USE THIS LINE TO ORTHOGONALIZE THE TD_NET.
+                - COMMENT OUT THE FOR LOOP BELOW. IT DOES NOT ORTHGONALIZE THE TD_NET
+            '''
+            # for module, gain in module_gains.items():
+            #     module.apply(partial(self.init_weights, gain=gain))
 
             for module, gain in module_gains.items():
-                module.apply(partial(self.init_weights, gain=gain))
+                # Special case: MlpExtractorDopa
+                if isinstance(module, MlpExtractorDopa):
+                    # Apply init to everything EXCEPT td_net
+                    for name, submodule in module.named_children():
+                        if name == "td_net":
+                            continue
+                        submodule.apply(partial(self.init_weights, gain=gain))
+                else:
+                    module.apply(partial(self.init_weights, gain=gain))
 
         # Two optimizers
         #   - RL network: RMSprop
         #   - TD network: Adam
+        '''
+        # SELF.DA_NET_NAMES CHANGED TO ['td_net']. SEE _init_() above.
+            NOW 'LOG_STD' NETWORK IS UNDER SELF.OPTIMIZER. PREVIOUSLY IT WAS LEFT OUT. 
+            CONSISTENT WITH A2C.
+            WHAT DOES 'LOG_STD' DO??
+        '''
         learning_rate      = lr_schedule(1)
         learning_rate_dopa = self.learning_rate_dopa
         self.optimizer = self.optimizer_class([
@@ -1101,12 +1121,12 @@ class ActorCriticDopaPolicy(BasePolicy):
         values  = self.value_net(latent_vf)
         return latent_pi, latent_vf, values
 
-    def _run_reward(self, rewards: th.Tensor) -> th.Tensor:
-        # (1) latent reward
-        latent_re   = self.mlp_extractor.forward_reward(rewards)  
-        # (2) inputs to dopa         
-        rewards_to_da = self.reward_net(latent_re)
-        return rewards_to_da
+    # def _run_reward(self, rewards: th.Tensor) -> th.Tensor:
+    #     # (1) latent reward
+    #     latent_re   = self.mlp_extractor.forward_reward(rewards)  
+    #     # (2) inputs to dopa         
+    #     rewards_to_da = self.reward_net(latent_re)
+    #     return rewards_to_da
         
     def extract_features(  # type: ignore[override]
         self, obs: PyTorchObs, features_extractor: Optional[BaseFeaturesExtractor] = None
