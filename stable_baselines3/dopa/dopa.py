@@ -268,25 +268,25 @@ class Dopa(OnPolicyDopaAlgorithm):
         # Switch to train mode (this affects batch norm / dropout)
         self.policy.set_training_mode(True)
         
-        # progress = time_step / total_timesteps
+        progress = time_step / total_timesteps
         for rollout_data in self.rollout_buffer.get(batch_size=None):       
             '''
             #TODO.3 EXECUTE META TRAINING
                 - TEMPORARILY LEFT OUT TO MATCH WITH A2C
             '''
-            # if self.traintype_meta:
-            #     loss_meta, loss_rl = self.meta_rollout_expanded_rl_dopa(rollout_data)
+            if self.traintype_meta:
+                loss_meta, loss_rl = self.meta_rollout_expanded_rl_dopa(rollout_data)
 
-            #     # reset RL network parameters
-            #     if self.reset_rlnet.time_for_reset(prg=progress):
-            #         self.rlnet_param_reset()           
-            #         print('\nReset RL network: ', self.reset_rlnet.k)                         
-            # else:
-            #     if self.replace_tdnet:
-            #         self.load_meta_tdnet()
-            #     loss_meta, loss_rl = self.rl_dopa(rollout_data)
+                # reset RL network parameters
+                if self.reset_rlnet.time_for_reset(prg=progress):
+                    self.rlnet_param_reset()           
+                    print('\nReset RL network: ', self.reset_rlnet.k)                         
+            else:
+                if self.replace_tdnet:
+                    self.load_meta_tdnet()
+                loss_meta, loss_rl = self.rl_dopa(rollout_data)
                 
-            loss_meta, loss_rl = self.rl_dopa(rollout_data)
+            # loss_meta, loss_rl = self.rl_dopa(rollout_data)
                                                 
             # Clip grad norm
             # th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)

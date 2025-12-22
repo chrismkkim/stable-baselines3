@@ -990,19 +990,19 @@ class ActorCriticDopaPolicy(BasePolicy):
             #TODO.1 USE THIS LINE TO ORTHOGONALIZE THE TD_NET.
                 - COMMENT OUT THE FOR LOOP BELOW. IT DOES NOT ORTHGONALIZE THE TD_NET
             '''
-            # for module, gain in module_gains.items():
-            #     module.apply(partial(self.init_weights, gain=gain))
-
             for module, gain in module_gains.items():
-                # Special case: MlpExtractorDopa
-                if isinstance(module, MlpExtractorDopa):
-                    # Apply init to everything EXCEPT td_net
-                    for name, submodule in module.named_children():
-                        if name == "td_net":
-                            continue
-                        submodule.apply(partial(self.init_weights, gain=gain))
-                else:
-                    module.apply(partial(self.init_weights, gain=gain))
+                module.apply(partial(self.init_weights, gain=gain))
+
+            # for module, gain in module_gains.items():
+            #     # Special case: MlpExtractorDopa
+            #     if isinstance(module, MlpExtractorDopa):
+            #         # Apply init to everything EXCEPT td_net
+            #         for name, submodule in module.named_children():
+            #             if name == "td_net":
+            #                 continue
+            #             submodule.apply(partial(self.init_weights, gain=gain))
+            #     else:
+            #         module.apply(partial(self.init_weights, gain=gain))
 
         # Two optimizers
         #   - RL network: RMSprop

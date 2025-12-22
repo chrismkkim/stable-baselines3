@@ -301,7 +301,7 @@ class MlpExtractorDopa(nn.Module):
         device = get_device(device)
         policy_net: list[nn.Module] = []
         value_net: list[nn.Module] = []
-        reward_net: list[nn.Module] = []
+        # reward_net: list[nn.Module] = []
         # v2d_net: list[nn.Module] = []
         # nextv2d_net: list[nn.Module] = []
         # r2d_net: list[nn.Module] = []
@@ -341,12 +341,12 @@ class MlpExtractorDopa(nn.Module):
             - TEMPORARILY COMMENTED OUT TO MATCH WITH A2C.
             - DON'T USE TORCH.LOAD() BELOW, SINCE SAVED MODEL IS NOT LOADED IN PRACTICE.
         '''
-        # # Iterate through the dopa layers and build the td net
-        # for layer_num, curr_layer_dim in enumerate(td_layers_dims):
-        #     td_net.append(nn.Linear(last_layer_dim_td, curr_layer_dim))
-        #     if layer_num < len(td_layers_dims) -1 :
-        #         td_net.append(activation_fn())
-        #     last_layer_dim_td = curr_layer_dim
+        # Iterate through the dopa layers and build the td net
+        for layer_num, curr_layer_dim in enumerate(td_layers_dims):
+            td_net.append(nn.Linear(last_layer_dim_td, curr_layer_dim))
+            if layer_num < len(td_layers_dims) -1 :
+                td_net.append(activation_fn())
+            last_layer_dim_td = curr_layer_dim
 
         # Save dim, used to create the distributions
         self.latent_dim_pi = last_layer_dim_pi
@@ -357,15 +357,15 @@ class MlpExtractorDopa(nn.Module):
         # If the list of layers is empty, the network will just act as an Identity module
         self.policy_net = nn.Sequential(*policy_net).to(device)
         self.value_net = nn.Sequential(*value_net).to(device)
+        self.td_net = nn.Sequential(*td_net).to(device)
         # self.reward_net = nn.Sequential(*reward_net).to(device)
-        # self.td_net = nn.Sequential(*td_net).to(device)
         '''
         #TODO.2 COMMENT OUT THIS LINE. DON'T LOAD A SAVED MODEL IN PRACTICE.
             - TEMPORARILY ADDED TO MATCH WITH A2C.
         '''
-        path_to_model = '/Users/kimchm/Documents/RL/trainedmodel/BipedalWalker-v3_BipedalWalker-v3/tmp/'
-        # torch.save(self.td_net, path_to_model + 'tdnet.pt')
-        self.td_net = torch.load(path_to_model + 'tdnet.pt', weights_only=False)
+        # path_to_model = '/Users/kimchm/Documents/RL/trainedmodel/BipedalWalker-v3_BipedalWalker-v3/tmp/'
+        # # torch.save(self.td_net, path_to_model + 'tdnet.pt')
+        # self.td_net = torch.load(path_to_model + 'tdnet.pt', weights_only=False)
 
     def forward(self, features: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
         """
