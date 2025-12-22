@@ -136,7 +136,6 @@ class Dopa(OnPolicyDopaAlgorithm):
         env: Union[GymEnv, str],
         traintype_meta: bool = True,
         interpolation_constant: float = 1.0, # 1.0 (dopa), 0.0 (advantage)
-        dummy_which_net: float = 0.0, 
         learning_rate: Union[float, Schedule] = 1e-5, # better: 1e-5, works: 1e-4, default: 7e-4
         learning_rate_dopa: Union[float, Schedule] = 1e-5,
         net_arch: Optional[Union[list[int], dict[str, list[int]]]] = None,
@@ -228,7 +227,6 @@ class Dopa(OnPolicyDopaAlgorithm):
         self.traintype_meta = traintype_meta
         # interpolate between dopa and advantage
         self.interpolation_constant = interpolation_constant
-        self.dummy_which_net = dummy_which_net
         # learning rates
         # self.policy.learning_rate_dopa = learning_rate_dopa
         self.learning_rate = learning_rate
@@ -330,12 +328,10 @@ class Dopa(OnPolicyDopaAlgorithm):
         
         # #==== Choose one from the two ====#
         # #--- (1) use dopa instead of advantage ---#
-        if self.dummy_which_net == 0.0:
-            loss_rl = self.compute_rlloss_using_dopa(rollout_data)
+        # loss_rl = self.compute_rlloss_using_dopa(rollout_data)
         
         #--- (2) use the interpolation between dopa and advantage ---#
-        if self.dummy_which_net == 1.0:
-            loss_rl = self.compute_rlloss_using_dopa_interpolated(rollout_data)
+        loss_rl = self.compute_rlloss_using_dopa_interpolated(rollout_data)
         
         '''
         optimization step commented out

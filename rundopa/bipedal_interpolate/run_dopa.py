@@ -22,6 +22,7 @@ import argparse
 import subprocess
 import sys
 import os
+import numpy as np
 from stable_baselines3.common import results_plotter
 
 
@@ -75,8 +76,9 @@ def main():
     path = '/Users/kimchm/Documents/GitHub/rl-baselines3-zoo/'
     zoo_root = os.path.abspath(path)
 
-    temporary_testing = True    
-    rndseed = str(123)
+    temporary_testing = False      
+    rng = np.random.default_rng()
+    rndseed = str(rng.integers(low=0, high=1000000))
     
     # List of algorithms to run in sequence:
     algo    = 'dopa'
